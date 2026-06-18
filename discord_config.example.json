@@ -1,0 +1,9 @@
+{
+  "DISCORD_BOT_TOKEN": "貼上你的 Bot Token",
+  "DISCORD_CHANNEL_IDS": [
+    "第一個頻道 ID",
+    "第二個頻道 ID"
+  ],
+  "DISCORD_SEND_AFTER_REFRESH": "1",
+  "DISCORD_BOT_ENABLED": "1"
+}

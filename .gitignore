@@ -1,0 +1,7 @@
+.env
+discord_config.json
+.venv/
+__pycache__/
+data/*
+!data/latest.json
+static/*.png
