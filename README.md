@@ -1,18 +1,5 @@
 # DCapp Stock
 
-## Neuralyn Landing Page
-
-本專案現在的根路徑 `/` 會優先顯示 `frontend/dist` 內的 Neuralyn landing page。這個前端使用 React、Vite、TypeScript、Tailwind CSS、Framer Motion、shadcn/ui 基礎 Button、`@fontsource/inter` 與 `@fontsource/instrument-serif`。
-
-主要檔案：
-
-```text
-frontend/src/App.tsx
-frontend/src/index.css
-frontend/src/components/ui/button.tsx
-frontend/public/assets/
-```
-
 開發與建置：
 
 ```text
