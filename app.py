@@ -34,6 +34,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATE_PATH = BASE_DIR / "templates" / "index.html"
+FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
+FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
 
 TAIFEX_CALLS_PUTS_URL = "https://www.taifex.com.tw/cht/3/callsAndPutsDate"
 TAIFEX_FUT_CONTRACTS_URL = "https://www.taifex.com.tw/cht/3/futContractsDate"
@@ -1294,6 +1296,85 @@ def draw_history_detail_chart(payload: dict[str, Any], path: Path, limit: int = 
     img.save(path)
 
 
+def draw_history_detail_chart(payload: dict[str, Any], path: Path, limit: int = 15) -> None:
+    if Image is None or ImageDraw is None:
+        return
+    rows = (payload.get("rows") or [])[:limit]
+    width = 1900
+    row_h = 48
+    top_margin = 128
+    height = top_margin + 54 + max(len(rows), 1) * row_h + 54
+    img = Image.new("RGB", (width, height), "#f0f0f0")
+    draw = ImageDraw.Draw(img)
+    try:
+        title_font = ImageFont.truetype("msjh.ttc", 42)
+        header_font = ImageFont.truetype("msjh.ttc", 18)
+        cell_font = ImageFont.truetype("msjh.ttc", 18)
+        small_font = ImageFont.truetype("msjh.ttc", 16)
+    except Exception:
+        title_font = header_font = cell_font = small_font = ImageFont.load_default()
+
+    def color(value: Any) -> str:
+        number = safe_number(value)
+        if number > 0:
+            return "#1e325a"
+        if number < 0:
+            return "#d92d20"
+        return "#7a8391"
+
+    def text_fit(value: Any, limit_chars: int) -> str:
+        content = str(value if value not in {None, ""} else "-")
+        return content if len(content) <= limit_chars else content[: max(limit_chars - 1, 1)] + "…"
+
+    columns = [
+        ("日期", 105, lambda r: (r.get("dateLabel", "-")[5:], None)),
+        ("判讀", 130, lambda r: (compact_view_label((r.get("foreignPositionView") or {}).get("label", "-")), (r.get("foreignPositionView") or {}).get("score"))),
+        ("大盤", 145, lambda r: ((r.get("marketIndex") or {}).get("taiexCloseFormat", "-"), None)),
+        ("漲跌%", 95, lambda r: ((r.get("marketIndex") or {}).get("taiexChangePercentFormat", "-"), (r.get("marketIndex") or {}).get("taiexChangePercent"))),
+        ("外資買賣超", 130, lambda r: ((r.get("spotInstitutional") or {}).get("foreignNetBuyAmountYiFormat", "-").replace("億", ""), (r.get("spotInstitutional") or {}).get("foreignNetBuyAmount"))),
+        ("外資期貨", 120, lambda r: (((r.get("futuresInstitutional") or {}).get("foreign") or {}).get("netFormat", "-"), ((r.get("futuresInstitutional") or {}).get("foreign") or {}).get("net"))),
+        ("前五大", 115, lambda r: ((r.get("largeTraderFutures") or {}).get("top5NetFormat", "-"), (r.get("largeTraderFutures") or {}).get("top5Net"))),
+        ("前十大", 115, lambda r: ((r.get("largeTraderFutures") or {}).get("top10NetFormat", "-"), (r.get("largeTraderFutures") or {}).get("top10Net"))),
+        ("PCR", 105, lambda r: ((r.get("optionPcr") or {}).get("openInterestPcrFormat", "-"), None)),
+        ("小台散戶", 130, lambda r: ((r.get("retailMiniFutures") or {}).get("retailLongShortRatioFormat", "-"), (r.get("retailMiniFutures") or {}).get("retailLongShortRatio"))),
+        ("外資選擇權", 125, lambda r: ((r.get("foreignOptionAmount") or {}).get("netAmountFormat", "-"), (r.get("foreignOptionAmount") or {}).get("netAmount"))),
+        ("外資選淨額", 115, lambda r: ((((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLotFormat", "-")), (((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLot")))),
+    ]
+    table_width = sum(col_width for _, col_width, _ in columns)
+    left = (width - table_width) // 2
+    right = left + table_width
+    latest = payload.get("latest") or {}
+
+    draw.rounded_rectangle((28, 24, width - 28, height - 24), radius=46, fill="#f8f8f8", outline="#ffffff", width=2)
+    draw.rounded_rectangle((left, 42, left + 245, 80), radius=19, fill="#ffffff", outline="#dfe3ea")
+    draw.text((left + 18, 51), "TWSE / TAIFEX", fill="#1e325a", font=small_font)
+    draw.text((left, 88), "近 15 日市場明細", fill="#1e325a", font=title_font)
+    draw.text((left + 430, 102), f"最新資料 {latest.get('dateLabel', '-')} / 正值深藍，負值紅色", fill="#5e6470", font=small_font)
+
+    y = top_margin
+    draw.rounded_rectangle((left, y, right, y + 42), radius=18, fill="#ffffff", outline="#dfe3ea")
+    x = left
+    for header, col_width, _ in columns:
+        draw.text((x + 10, y + 11), header, fill="#5e6470", font=header_font)
+        x += col_width
+        draw.line((x, y + 7, x, y + 42 + max(len(rows), 1) * row_h), fill="#e8ebf0", width=1)
+
+    for row_index, row in enumerate(rows):
+        y = top_margin + 42 + row_index * row_h
+        fill = "#ffffff" if row_index % 2 == 0 else "#f6f7f9"
+        draw.rounded_rectangle((left, y + 4, right, y + row_h - 4), radius=14, fill=fill, outline="#edf0f5")
+        x = left
+        for _, col_width, getter in columns:
+            value, tone = getter(row)
+            fill_color = color(tone) if tone is not None else "#111827"
+            draw.text((x + 10, y + 14), text_fit(value, max(4, col_width // 14)), fill=fill_color, font=cell_font)
+            x += col_width
+
+    if not rows:
+        draw.text((left + 20, top_margin + 68), "尚無資料", fill="#5e6470", font=cell_font)
+    img.save(path)
+
+
 def generate_static_files(payload: dict[str, Any]) -> None:
     ensure_dirs()
     draw_snapshot_chart(payload, STATIC_DIR / "overview-chart.png")
@@ -1310,8 +1391,7 @@ def ensure_overview_chart(payload: dict[str, Any]) -> Path:
 
 def ensure_discord_history_chart(payload: dict[str, Any]) -> Path:
     chart_path = STATIC_DIR / "discord-history-detail.png"
-    if not chart_path.exists():
-        draw_history_detail_chart(payload, chart_path)
+    draw_history_detail_chart(payload, chart_path)
     return chart_path
 
 
@@ -1500,6 +1580,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_error(HTTPStatus.FORBIDDEN.value)
                 return
             self.send_file(requested)
+        elif parsed.path.startswith("/assets/"):
+            requested = (FRONTEND_DIST_DIR / parsed.path.removeprefix("/")).resolve()
+            if FRONTEND_DIST_DIR.resolve() not in requested.parents and requested != FRONTEND_DIST_DIR.resolve():
+                self.send_error(HTTPStatus.FORBIDDEN.value)
+                return
+            self.send_file(requested)
         else:
             self.send_error(HTTPStatus.NOT_FOUND.value)
 
@@ -1639,7 +1725,28 @@ def create_discord_bot() -> Any:
 
 
 def load_index_html() -> str:
-    return TEMPLATE_PATH.read_text(encoding="utf-8")
+    if FRONTEND_INDEX_PATH.exists():
+        return FRONTEND_INDEX_PATH.read_text(encoding="utf-8")
+    return """<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neuralyn frontend not built</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #000; color: #fff; font-family: system-ui, sans-serif; }
+    main { width: min(680px, calc(100% - 40px)); border: 1px solid #333; border-radius: 16px; padding: 28px; background: #0d0d0d; }
+    code { color: #d4d4d4; }
+    p { color: #a3a3a3; line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Neuralyn frontend 尚未建置</h1>
+    <p>請先進入 <code>frontend</code> 執行 <code>npm install</code> 與 <code>npm run build</code>，再重新整理此頁。</p>
+  </main>
+</body>
+</html>"""
 
 
 def run_web_server() -> ThreadingHTTPServer:

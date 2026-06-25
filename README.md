@@ -1,5 +1,42 @@
 # DCapp Stock
 
+## Neuralyn Landing Page
+
+本專案現在的根路徑 `/` 會優先顯示 `frontend/dist` 內的 Neuralyn landing page。這個前端使用 React、Vite、TypeScript、Tailwind CSS、Framer Motion、shadcn/ui 基礎 Button、`@fontsource/inter` 與 `@fontsource/instrument-serif`。
+
+主要檔案：
+
+```text
+frontend/src/App.tsx
+frontend/src/index.css
+frontend/src/components/ui/button.tsx
+frontend/public/assets/
+```
+
+開發與建置：
+
+```text
+cd frontend
+pnpm install
+pnpm run build
+```
+
+如果你的電腦使用 npm，也可以用：
+
+```text
+cd frontend
+npm install
+npm run build
+```
+
+建置完成後回到專案根目錄執行 Python app，首頁就會讀取 `frontend/dist/index.html`：
+
+```text
+.venv\Scripts\python.exe app.py
+```
+
+若尚未建置前端，Python 首頁會顯示「Neuralyn frontend 尚未建置」提示。既有股票資料 API、Discord bot、資料刷新流程仍保留。
+
 每日籌碼總覽 Dashboard 與 Discord Bot。專案會抓取 TWSE / TAIFEX 官方資料，整理成網頁 Dashboard、快取 JSON、Discord 文字摘要與圖片。
 
 ## 快速啟動
