@@ -24,7 +24,7 @@ http://127.0.0.1:8080
 - 現貨區顯示上市成交金額、外資 / 投信 / 自營買賣超，單位為億元。
 - 期貨區顯示臺股期貨法人未平倉多單、空單、淨額。
 - 大額交易人區顯示臺股期貨組合 `TX+MTX/4+TMF/20` 所有契約前五大、前十大淨值。
-- 選擇權區顯示 PCR、小台指散戶多空比、外資選擇權金額、台指選擇權法人多空未平倉。
+- 選擇權區顯示未平倉 PCR、小台指散戶多空比、外資選擇權金額、台指選擇權法人多空未平倉。
 - 外資選擇權金額與外資選擇權淨額提供近 30 日長條圖。
 - 外資操作判讀整合外資現貨、前五 / 前十大淨值、PCR、外資選擇權金額，標示外資偏多、偏空、偏對沖或中性。
 - 網頁下方保留近 30 個交易日明細。
@@ -37,7 +37,7 @@ http://127.0.0.1:8080
 - TAIFEX 期貨三大法人：臺股期貨與小台指法人多空未平倉。
 - TAIFEX 期貨每日交易行情：小台全體未平倉量。
 - TAIFEX 大額交易人：臺股期貨組合前五大、前十大交易人留倉。
-- TAIFEX Put/Call Ratio：選擇權 PCR。
+- TAIFEX Put/Call Ratio：選擇權 PCR。網頁、表格與 Discord 圖片主顯示為未平倉 PCR，成交量 PCR 只作輔助資訊。
 - TAIFEX 選擇權買賣權分計：外資選擇權金額、台指選擇權法人多空未平倉。
 
 ## 重要公式
@@ -173,7 +173,7 @@ github_upload/
 - `futuresInstitutional`：期貨法人多單、空單、淨額。
 - `retailMiniFutures`：小台指散戶留倉量、小台全體未平倉量、小台散戶多空比。
 - `largeTraderFutures`：臺股期貨組合前五大、前十大交易人淨值。
-- `optionPcr`：成交量 PCR、未平倉 PCR。
+- `optionPcr`：成交量 PCR、未平倉 PCR；主顯示欄位使用未平倉 PCR。
 - `foreignOptionAmount`：外資選擇權多方金額、空方金額、淨額。
 - `txoInstitutionalOpenInterest`：台指選擇權法人多空未平倉。
 - `foreignPositionView`：外資操作判讀、分數、理由與各子項訊號。
@@ -212,3 +212,18 @@ github_upload/
 - 要改 Discord 圖片：修改 `draw_history_detail_chart()`。
 - 要改網頁卡片或表格：修改 `templates/index.html`。
 - 改完後請同步需要上傳的檔案到 `github_upload/`。
+
+## GitHub 上傳注意事項
+
+上傳 `github_upload/` 內容即可。請確認：
+
+- 不要上傳 `discord_config.json`。
+- 不要上傳 `.venv/`。
+- 不要上傳 `logs/`。
+- 不要上傳 `__pycache__/`。
+- `discord_config.example.json` 可以上傳。
+- `data/latest.json` 可以上傳，方便 GitHub 版本第一次開啟就有資料。
+
+## 已知限制
+
+TAIFEX 偶爾會回傳 `429 Too Many Requests`。若遇到限流，部分歷史日可能暫時使用快取或顯示缺資料；稍後重新更新通常會補回。

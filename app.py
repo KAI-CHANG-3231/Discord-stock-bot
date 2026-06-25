@@ -11,10 +11,10 @@ import ssl
 import threading
 import time
 import traceback
-import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time as clock_time, timedelta, timezone
 from html.parser import HTMLParser
@@ -26,77 +26,77 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 try:
     from PIL import Image, ImageDraw, ImageFont
-except Exception:  # pragma: no cover - the web app still works without PNG export
-    Image = None
-    ImageDraw = None
-    ImageFont = None
+except Exception:
+    Image = ImageDraw = ImageFont = None
 
 
 BASE_DIR = Path(__file__).resolve().parent
-
-
-def load_dotenv(path: Path) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
-
-
-def load_json_env(path: Path) -> None:
-    if not path.exists():
-        return
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        return
-    for key, value in data.items():
-        if value is None:
-            continue
-        if isinstance(value, (list, dict)):
-            text = json.dumps(value, ensure_ascii=False)
-        else:
-            text = str(value).strip()
-        if text:
-            os.environ[str(key)] = text
-
-
-load_dotenv(BASE_DIR / ".env")
-load_json_env(BASE_DIR / "discord_config.json")
-
 DATA_DIR = BASE_DIR / "data"
 STATIC_DIR = BASE_DIR / "static"
+TEMPLATE_PATH = BASE_DIR / "templates" / "index.html"
 
 TAIFEX_CALLS_PUTS_URL = "https://www.taifex.com.tw/cht/3/callsAndPutsDate"
 TAIFEX_FUT_CONTRACTS_URL = "https://www.taifex.com.tw/cht/3/futContractsDate"
 TAIFEX_FUT_DAILY_URL = "https://www.taifex.com.tw/cht/3/futDailyMarketReport"
-TWSE_TAIEX_URL = "https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST"
-TAIFEX_SOURCE_LABEL = "臺灣期貨交易所 選擇權買賣權分計-依日期"
+TAIFEX_LARGE_TRADER_URL = "https://www.taifex.com.tw/cht/3/largeTraderFutQry"
+TAIFEX_PC_RATIO_URL = "https://www.taifex.com.tw/cht/3/pcRatio"
+TWSE_MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
+TWSE_T86_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
+TWSE_BFI82U_URL = "https://www.twse.com.tw/rwd/zh/fund/BFI82U"
+
 PRODUCT_ID = "TXO"
 PRODUCT_NAME = "臺指選擇權"
-MINI_FUTURES_CONTRACTS_ID = "MXF"
-MINI_FUTURES_MARKET_ID = "MTX"
-MINI_FUTURES_NAME = "小型臺指期貨"
-RETAIL_SOURCE_LABEL = "臺灣期貨交易所 小台指散戶多空比推導"
-MARKET_INDEX_SOURCE_LABEL = "臺灣證券交易所 TAIEX 加權指數"
-
+FUTURES_PRODUCT_ID = "TXF"
+FUTURES_PRODUCT_NAME = "臺股期貨"
+FUTURES_COMBO_NAME = "臺股期貨(TX+MTX/4+TMF/20)"
+MINI_FUTURES_DAILY_ID = "MTX"
+MINI_FUTURES_INSTITUTIONAL_ID = "MXF"
+MINI_FUTURES_PRODUCT_NAME = "小型臺指期貨"
+LOOKBACK_ROWS = int(os.getenv("LOOKBACK_ROWS", "30"))
+REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "0.25"))
 DEFAULT_HOST = os.getenv("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("PORT", "8080"))
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://{DEFAULT_HOST}:{DEFAULT_PORT}")
 TIMEZONE_NAME = os.getenv("TIMEZONE", "Asia/Taipei")
 SCHEDULE_TIME = os.getenv("SCHEDULE_TIME", "16:20")
-LOOKBACK_ROWS = int(os.getenv("LOOKBACK_ROWS", "30"))
-RETAIL_MAX_NEW_DAYS = int(os.getenv("RETAIL_MAX_NEW_DAYS", str(LOOKBACK_ROWS)))
-RETAIL_REQUEST_DELAY = float(os.getenv("RETAIL_REQUEST_DELAY", "0.4"))
 RUN_ON_STARTUP = os.getenv("RUN_ON_STARTUP", "1") == "1"
+DISCORD_API_BASE = "https://discord.com/api/v10"
+
+
+def load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def load_json_env(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    for key, value in data.items():
+        env_key = key.upper()
+        if isinstance(value, (list, dict)):
+            os.environ.setdefault(env_key, json.dumps(value, ensure_ascii=False))
+        else:
+            os.environ.setdefault(env_key, str(value))
+
+
+load_dotenv(BASE_DIR / ".env")
+load_json_env(BASE_DIR / "discord_config.json")
 
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "").strip()
 if DISCORD_BOT_TOKEN.lower().startswith("bot "):
     DISCORD_BOT_TOKEN = DISCORD_BOT_TOKEN[4:].strip()
+DISCORD_SEND_AFTER_REFRESH = os.getenv("DISCORD_SEND_AFTER_REFRESH", "1") == "1"
+DISCORD_BOT_ENABLED = os.getenv("DISCORD_BOT_ENABLED", "1") == "1"
 
 
 def parse_discord_channel_ids() -> list[int]:
@@ -112,40 +112,26 @@ def parse_discord_channel_ids() -> list[int]:
     if single:
         values.append(single)
 
-    channel_ids: list[int] = []
+    ids: list[int] = []
     for value in values:
-        text = str(value).strip().strip('"').strip("'")
-        if not text or text == "0":
-            continue
         try:
-            channel_id = int(text)
+            channel_id = int(str(value).strip().strip('"').strip("'"))
         except ValueError:
             continue
-        if channel_id not in channel_ids:
-            channel_ids.append(channel_id)
-    return channel_ids
+        if channel_id and channel_id not in ids:
+            ids.append(channel_id)
+    return ids
 
 
 DISCORD_CHANNEL_IDS = parse_discord_channel_ids()
-DISCORD_SEND_AFTER_REFRESH = os.getenv("DISCORD_SEND_AFTER_REFRESH", "1") == "1"
-DISCORD_BOT_ENABLED = os.getenv("DISCORD_BOT_ENABLED", "1") == "1"
-DISCORD_API_BASE = "https://discord.com/api/v10"
-
-
-def discord_configured() -> bool:
-    return bool(DISCORD_BOT_TOKEN and DISCORD_CHANNEL_IDS)
-
-IDENTITY_LABELS = {
-    "foreign": "外資",
-    "investmentTrust": "投信",
-    "dealer": "自營商",
-}
+IDENTITY_LABELS = {"foreign": "外資", "investmentTrust": "投信", "dealer": "自營商"}
 IDENTITY_KEYS = {value: key for key, value in IDENTITY_LABELS.items()}
 IDENTITY_ORDER = ["foreign", "investmentTrust", "dealer"]
-IDENTITY_COLORS = {
-    "foreign": ("#d64b5f", "#1f9d68", "#3368d8"),
-    "investmentTrust": ("#b25dd8", "#198f9f", "#e08a2e"),
-    "dealer": ("#e06d32", "#2674a6", "#5963d8"),
+CATEGORY_LABELS = {
+    "overview": "總覽",
+    "cash": "現貨",
+    "futures": "期貨",
+    "options": "選擇權",
 }
 
 
@@ -159,7 +145,7 @@ def now_taipei() -> datetime:
 
 def parse_schedule_time(value: str) -> clock_time:
     hour, minute = value.split(":", 1)
-    return clock_time(hour=int(hour), minute=int(minute))
+    return clock_time(int(hour), int(minute))
 
 
 def ensure_dirs() -> None:
@@ -172,8 +158,9 @@ def safe_number(value: Any, default: float = 0) -> float:
         return default
     if isinstance(value, (int, float)):
         return float(value)
-    text = str(value).replace(",", "").strip()
-    if not text or text == "-":
+    text = re.sub(r"<[^>]+>", "", str(value))
+    text = text.replace(",", "").replace("%", "").strip()
+    if not text or text in {"-", "--"}:
         return default
     try:
         return float(text)
@@ -189,10 +176,9 @@ def fmt_int(value: Any) -> str:
     return f"{as_int(value):,}"
 
 
-def fmt_signed(value: Any) -> str:
+def fmt_signed_int(value: Any) -> str:
     number = as_int(value)
-    sign = "+" if number > 0 else ""
-    return f"{sign}{number:,}"
+    return f"{'+' if number > 0 else ''}{number:,}"
 
 
 def fmt_float(value: Any, digits: int = 2) -> str:
@@ -201,16 +187,270 @@ def fmt_float(value: Any, digits: int = 2) -> str:
 
 def fmt_signed_float(value: Any, digits: int = 2) -> str:
     number = safe_number(value)
-    sign = "+" if number > 0 else ""
-    return f"{sign}{number:,.{digits}f}"
+    return f"{'+' if number > 0 else ''}{number:,.{digits}f}"
+
+
+def fmt_percent(value: Any, digits: int = 2) -> str:
+    return f"{safe_number(value):,.{digits}f}%"
 
 
 def fmt_signed_percent(value: Any, digits: int = 2) -> str:
     return f"{fmt_signed_float(value, digits)}%"
 
 
+def fmt_yi_amount(value: Any, digits: int = 2, signed: bool = False) -> str:
+    amount = safe_number(value) / 100_000_000
+    sign = "+" if signed and amount > 0 else ""
+    return f"{sign}{amount:,.{digits}f}\u5104"
+
+
+def signal_label(signal: str) -> str:
+    return {
+        "strong_bull": "強偏多",
+        "bull": "偏多",
+        "neutral": "中性",
+        "bear": "偏空",
+        "strong_bear": "強偏空",
+        "divergent": "分歧",
+    }.get(signal, "中性")
+
+
+def signal_direction(signal: str) -> str:
+    if signal in {"strong_bull", "bull"}:
+        return "bull"
+    if signal in {"strong_bear", "bear"}:
+        return "bear"
+    if signal == "divergent":
+        return "divergent"
+    return "neutral"
+
+
+def classify_foreign_spot(amount: Any) -> dict[str, Any]:
+    if amount is None:
+        return {
+            "signal": "neutral",
+            "direction": "neutral",
+            "label": signal_label("neutral"),
+            "reason": "外資現貨缺資料",
+        }
+    yi_amount = safe_number(amount) / 100_000_000
+    if yi_amount >= 300:
+        signal = "strong_bull"
+    elif yi_amount >= 100:
+        signal = "bull"
+    elif yi_amount <= -300:
+        signal = "strong_bear"
+    elif yi_amount <= -100:
+        signal = "bear"
+    else:
+        signal = "neutral"
+    return {
+        "signal": signal,
+        "direction": signal_direction(signal),
+        "label": signal_label(signal),
+        "reason": f"外資現貨 {fmt_yi_amount(amount, signed=True)}",
+    }
+
+
+def classify_large_traders(large: dict[str, Any]) -> dict[str, Any]:
+    if "top5Net" not in large and "top10Net" not in large:
+        return {
+            "signal": "neutral",
+            "direction": "neutral",
+            "label": signal_label("neutral"),
+            "reason": "大額交易人缺資料",
+            "top5Signal": "neutral",
+            "top10Signal": "neutral",
+        }
+    top5 = safe_number(large.get("top5Net"))
+    top10 = safe_number(large.get("top10Net"))
+
+    def classify_top5(value: float) -> str:
+        if value > 3000:
+            return "bull"
+        if value < -3000:
+            return "bear"
+        return "neutral"
+
+    def classify_top10(value: float) -> str:
+        if value > 8000:
+            return "strong_bull"
+        if value < -8000:
+            return "strong_bear"
+        if value > 3000:
+            return "bull"
+        if value < -3000:
+            return "bear"
+        return "neutral"
+
+    top5_signal = classify_top5(top5)
+    top10_signal = classify_top10(top10)
+    top5_dir = signal_direction(top5_signal)
+    top10_dir = signal_direction(top10_signal)
+    divergent = top5_dir in {"bull", "bear"} and top10_dir in {"bull", "bear"} and top5_dir != top10_dir
+
+    if divergent:
+        signal = "divergent"
+        reason = f"大戶分歧，前五大 {fmt_signed_int(top5)}、前十大 {fmt_signed_int(top10)}"
+    elif top10_dir in {"bull", "bear"}:
+        signal = top10_signal
+        reason = f"前十大 {fmt_signed_int(top10)}，前五大 {fmt_signed_int(top5)}"
+    elif top5_dir in {"bull", "bear"}:
+        signal = top5_signal
+        reason = f"前五大 {fmt_signed_int(top5)}，前十大 {fmt_signed_int(top10)}"
+    else:
+        signal = "neutral"
+        reason = f"前五大 {fmt_signed_int(top5)}、前十大 {fmt_signed_int(top10)}"
+
+    return {
+        "signal": signal,
+        "direction": signal_direction(signal),
+        "label": "大戶分歧" if divergent else signal_label(signal),
+        "reason": reason,
+        "top5Signal": top5_signal,
+        "top10Signal": top10_signal,
+    }
+
+
+def classify_pcr(pcr: dict[str, Any]) -> dict[str, Any]:
+    if "volumePcr" not in pcr and "openInterestPcr" not in pcr:
+        return {
+            "signal": "neutral",
+            "direction": "neutral",
+            "label": signal_label("neutral"),
+            "reason": "PCR 缺資料",
+        }
+    volume_pcr = safe_number(pcr.get("volumePcr"))
+    oi_pcr = safe_number(pcr.get("openInterestPcr"))
+    signal = "neutral"
+    reason = f"OI PCR {fmt_percent(oi_pcr)}、成交量 PCR {fmt_percent(volume_pcr)}"
+    if oi_pcr >= 130:
+        signal = "strong_bear"
+        reason = f"OI PCR {fmt_percent(oi_pcr)} 避險重"
+    elif oi_pcr >= 115:
+        signal = "bear"
+        reason = f"OI PCR {fmt_percent(oi_pcr)} 偏高"
+    elif oi_pcr <= 90 and oi_pcr > 0:
+        signal = "bull"
+        reason = f"OI PCR {fmt_percent(oi_pcr)} 偏低"
+    elif volume_pcr >= 120:
+        signal = "bear"
+        reason = f"成交量 PCR {fmt_percent(volume_pcr)} 偏高"
+    elif volume_pcr <= 80 and volume_pcr > 0:
+        signal = "bull"
+        reason = f"成交量 PCR {fmt_percent(volume_pcr)} 偏低"
+    return {
+        "signal": signal,
+        "direction": signal_direction(signal),
+        "label": signal_label(signal),
+        "reason": reason,
+    }
+
+
+def classify_foreign_option_amount(amount: Any) -> dict[str, Any]:
+    if amount is None:
+        return {
+            "signal": "neutral",
+            "direction": "neutral",
+            "label": signal_label("neutral"),
+            "reason": "外資選擇權金額缺資料",
+        }
+    value = safe_number(amount)
+    if value >= 200000:
+        signal = "strong_bull"
+    elif value >= 50000:
+        signal = "bull"
+    elif value <= -200000:
+        signal = "strong_bear"
+    elif value <= -50000:
+        signal = "bear"
+    else:
+        signal = "neutral"
+    return {
+        "signal": signal,
+        "direction": signal_direction(signal),
+        "label": signal_label(signal),
+        "reason": f"外資選擇權金額 {fmt_signed_int(value)}",
+    }
+
+
+def build_foreign_position_view(row: dict[str, Any]) -> dict[str, Any]:
+    spot = row.get("spotInstitutional") or {}
+    large = row.get("largeTraderFutures") or {}
+    pcr = row.get("optionPcr") or {}
+    foreign_opt = row.get("foreignOptionAmount") or {}
+
+    signals = {
+        "spot": classify_foreign_spot(spot.get("foreignNetBuyAmount")),
+        "largeTrader": classify_large_traders(large),
+        "pcr": classify_pcr(pcr),
+        "foreignOption": classify_foreign_option_amount(foreign_opt.get("netAmount")),
+    }
+    directions = {key: item["direction"] for key, item in signals.items()}
+    bull_count = sum(1 for value in directions.values() if value == "bull")
+    bear_count = sum(1 for value in directions.values() if value == "bear")
+    derivative_bull_count = sum(1 for key in ("largeTrader", "pcr", "foreignOption") if directions[key] == "bull")
+    derivative_bear_count = sum(1 for key in ("largeTrader", "pcr", "foreignOption") if directions[key] == "bear")
+    has_divergence = directions["largeTrader"] == "divergent"
+
+    if bull_count >= 3 and directions["pcr"] != "bear":
+        bias = "bullish"
+        label = "外資偏多"
+        score = bull_count - bear_count
+        explanation = "外資現貨、期貨大戶與選擇權多數偏多"
+    elif bear_count >= 3:
+        bias = "bearish"
+        label = "外資偏空"
+        score = bull_count - bear_count
+        explanation = "外資現貨、期貨大戶、PCR 或選擇權多數偏空"
+    elif (directions["spot"] == "bull" and derivative_bear_count >= 2) or (directions["spot"] == "bear" and derivative_bull_count >= 2) or has_divergence:
+        bias = "hedged"
+        label = "外資偏對沖"
+        score = 0
+        explanation = "現貨與衍生性商品方向不一致"
+    else:
+        bias = "neutral"
+        label = "中性 / 訊號不足"
+        score = bull_count - bear_count
+        explanation = "多空訊號未達確認門檻"
+
+    reasons = [
+        signals["spot"]["reason"],
+        signals["largeTrader"]["reason"],
+        signals["pcr"]["reason"],
+        signals["foreignOption"]["reason"],
+    ]
+    explanation_lines = [
+        f"多空強度：{'高' if max(bull_count, bear_count) >= 3 else '中' if max(bull_count, bear_count) == 2 else '低'}（多方 {bull_count} 項 / 空方 {bear_count} 項）"
+    ]
+    if bias == "bullish":
+        explanation_lines.append(f"偏多原因：{explanation}")
+    elif bias == "bearish":
+        explanation_lines.append(f"偏空原因：{explanation}")
+    elif bias == "hedged":
+        explanation_lines.append("可能為避險：現貨與期貨/選擇權方向不一致")
+    else:
+        explanation_lines.append("目前多空訊號不夠一致，先視為中性。")
+    if signals["pcr"]["direction"] == "bear":
+        explanation_lines.append(f"避險訊號：{signals['pcr']['reason']}，Put 避險壓力較重")
+    return {
+        "label": label,
+        "bias": bias,
+        "score": score,
+        "scoreFormat": fmt_signed_int(score),
+        "bullCount": bull_count,
+        "bearCount": bear_count,
+        "confidence": "高" if max(bull_count, bear_count) >= 3 else "中" if max(bull_count, bear_count) == 2 else "低",
+        "summary": explanation,
+        "reason": " + ".join(reasons),
+        "explanationLines": explanation_lines,
+        "explanation": "；".join(explanation_lines),
+        "signals": signals,
+    }
+
+
 def parse_taifex_date(value: str) -> date:
-    return datetime.strptime(value, "%Y/%m/%d").date()
+    return datetime.strptime(value.strip(), "%Y/%m/%d").date()
 
 
 def parse_twse_date(value: str) -> date:
@@ -229,9 +469,29 @@ def taifex_date(value: date) -> str:
     return value.strftime("%Y/%m/%d")
 
 
-def public_row(row: dict[str, Any]) -> dict[str, Any]:
-    hidden = {"raw"}
-    return {key: value for key, value in row.items() if key not in hidden}
+def twse_date(value: date) -> str:
+    return value.strftime("%Y%m%d")
+
+
+def value_tone(value: Any) -> str:
+    number = safe_number(value)
+    if number > 0:
+        return "positive"
+    if number < 0:
+        return "negative"
+    return "neutral"
+
+
+def first_parenthetical_number(value: str) -> int:
+    text = str(value)
+    match = re.search(r"-?[\d,]+", text)
+    return as_int(match.group(0)) if match else 0
+
+
+def first_percent(value: str) -> float:
+    text = str(value)
+    match = re.search(r"-?[\d,.]+", text)
+    return round(safe_number(match.group(0)), 2) if match else 0
 
 
 class TableParser(HTMLParser):
@@ -260,13 +520,50 @@ class TableParser(HTMLParser):
         tag = tag.lower()
         if self._in_cell and tag in {"td", "th"}:
             text = html.unescape("".join(self._buffer))
-            text = " ".join(text.split())
-            self._cells.append(text)
+            self._cells.append(" ".join(text.split()))
             self._in_cell = False
         elif self._in_row and tag == "tr":
             if self._cells:
                 self.rows.append(self._cells)
             self._in_row = False
+
+
+class WebClient:
+    def __init__(self) -> None:
+        self.opener = urllib.request.build_opener()
+        self.insecure_opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl._create_unverified_context())
+        )
+
+    def headers(self, referer: str = "") -> dict[str, str]:
+        return {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36",
+            "Accept": "text/html,application/json,text/plain,*/*",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": referer,
+        }
+
+    def get_text(self, url: str, referer: str = "") -> str:
+        req = urllib.request.Request(url, headers=self.headers(referer))
+        try:
+            with self.opener.open(req, timeout=30) as response:
+                return response.read().decode("utf-8-sig", errors="replace")
+        except urllib.error.URLError as exc:
+            if isinstance(getattr(exc, "reason", None), ssl.SSLError):
+                with self.insecure_opener.open(req, timeout=30) as response:
+                    return response.read().decode("utf-8-sig", errors="replace")
+            raise
+
+    def post_text(self, url: str, form: dict[str, str], referer: str = "") -> str:
+        headers = self.headers(referer or url)
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        data = urllib.parse.urlencode(form).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers)
+        with self.insecure_opener.open(req, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+
+    def get_json(self, url: str, referer: str = "") -> dict[str, Any]:
+        return json.loads(self.get_text(url, referer))
 
 
 @dataclass
@@ -277,929 +574,458 @@ class OptionSide:
     oi_sell_amount: int = 0
 
 
-class TaifexClient:
-    def __init__(self) -> None:
-        self.opener = urllib.request.build_opener()
-
-    def _headers(self) -> dict[str, str]:
-        return {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer": TAIFEX_CALLS_PUTS_URL,
-        }
-
-    def _request(self, query_date: date | None = None) -> str:
-        data = None
-        headers = self._headers()
-        if query_date:
-            form = {
-                "queryDate": taifex_date(query_date),
-                "commodityId": PRODUCT_ID,
-                "queryType": "",
-                "goDay": "",
-                "doQuery": "1",
-                "dateaddcnt": "",
-            }
-            data = urllib.parse.urlencode(form).encode("utf-8")
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-        req = urllib.request.Request(TAIFEX_CALLS_PUTS_URL, data=data, headers=headers)
-        with self.opener.open(req, timeout=30) as response:
-            return response.read().decode("utf-8", errors="replace")
-
+class OptionInstitutionalClient(WebClient):
     def latest_trade_date(self) -> date:
-        text = self._request()
+        text = self.get_text(TAIFEX_CALLS_PUTS_URL)
         return extract_display_date(text)
 
-    def fetch_day(self, query_date: date) -> dict[str, Any] | None:
-        text = self._request(query_date)
+    def fetch_day(self, day: date) -> dict[str, Any] | None:
+        text = self.post_text(
+            TAIFEX_CALLS_PUTS_URL,
+            {"queryDate": taifex_date(day), "commodityId": PRODUCT_ID, "queryType": "", "goDay": "", "doQuery": "1", "dateaddcnt": ""},
+        )
         try:
             displayed_date = extract_display_date(text)
         except ValueError:
             return None
-        if displayed_date != query_date:
+        if displayed_date != day:
             return None
-        return parse_calls_puts_page(text, displayed_date)
+        try:
+            return parse_option_institutional(text, day)
+        except ValueError:
+            return None
 
-    def fetch_history(self, limit: int = LOOKBACK_ROWS) -> dict[str, Any]:
+    def fetch_history(self, limit: int = LOOKBACK_ROWS) -> list[dict[str, Any]]:
         latest = self.latest_trade_date()
         rows: list[dict[str, Any]] = []
         cursor = latest
         misses = 0
-        max_calendar_days = max(limit * 3, 90)
-
-        while len(rows) < limit and misses <= max_calendar_days:
-            item = self.fetch_day(cursor)
-            if item:
-                rows.append(item)
+        while len(rows) < limit and misses <= limit * 4:
+            try:
+                row = self.fetch_day(cursor)
+            except Exception:
+                row = None
+            if row:
+                rows.append(row)
             cursor -= timedelta(days=1)
             misses += 1
-
+            time.sleep(REQUEST_DELAY)
         rows.sort(key=lambda item: item["date"], reverse=True)
-        attach_diffs(rows)
+        return rows
+
+
+class TwseMarketStatsClient(WebClient):
+    def fetch_day(self, day: date) -> dict[str, Any] | None:
+        url = f"{TWSE_MI_INDEX_URL}?{urllib.parse.urlencode({'date': twse_date(day), 'type': 'ALLBUT0999', 'response': 'json'})}"
+        payload = self.get_json(url, "https://www.twse.com.tw/zh/trading/historical/mi-index.html")
+        if payload.get("stat") != "OK":
+            return None
+        close = change = change_percent = listed_volume = listed_amount = 0
+        for table in payload.get("tables") or []:
+            title = table.get("title") or ""
+            if "價格指數" in title and "臺灣證券交易所" in title:
+                for cells in table.get("data") or []:
+                    if cells and cells[0] == "發行量加權股價指數":
+                        close = safe_number(cells[1])
+                        sign = -1 if "-" in str(cells[2]) else 1
+                        change = abs(safe_number(cells[3])) * sign
+                        change_percent = abs(safe_number(cells[4])) * sign
+            if "大盤統計資訊" in title:
+                for cells in table.get("data") or []:
+                    if cells and "一般股票" in str(cells[0]):
+                        listed_amount = as_int(cells[1])
+                        listed_volume = as_int(cells[2])
+        if not close:
+            return None
         return {
-            "source": TAIFEX_SOURCE_LABEL,
-            "sourceUrl": TAIFEX_CALLS_PUTS_URL,
-            "productId": PRODUCT_ID,
-            "productName": PRODUCT_NAME,
-            "tradeDate": rows[0]["dateLabel"] if rows else None,
-            "fetchedAt": now_taipei().isoformat(timespec="seconds"),
-            "rows": [public_row(row) for row in rows],
-            "latest": public_row(rows[0]) if rows else None,
+            "taiexClose": round(close, 2),
+            "taiexChange": round(change, 2),
+            "taiexChangePercent": round(change_percent, 2),
+            "listedVolume": listed_volume,
+            "listedAmount": listed_amount,
+            "taiexCloseFormat": fmt_float(close),
+            "taiexChangeFormat": fmt_signed_float(change),
+            "taiexChangePercentFormat": fmt_signed_percent(change_percent),
+            "listedVolumeFormat": fmt_int(listed_volume),
+            "listedAmountFormat": fmt_int(listed_amount),
+            "listedAmountYiFormat": fmt_yi_amount(listed_amount),
         }
 
 
-class MarketIndexClient:
-    def __init__(self) -> None:
-        self.opener = urllib.request.build_opener()
-        self.unverified_opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=ssl._create_unverified_context())
-        )
+class TwseInstitutionalClient(WebClient):
+    def fetch_day(self, day: date) -> dict[str, Any] | None:
+        url = f"{TWSE_BFI82U_URL}?{urllib.parse.urlencode({'dayDate': twse_date(day), 'type': 'day', 'response': 'json'})}"
+        payload = self.get_json(url, "https://www.twse.com.tw/zh/trading/foreign/bfi82u.html")
+        if payload.get("stat") != "OK":
+            return None
+        totals = {"foreignNetBuyAmount": 0, "investmentTrustNetBuyAmount": 0, "dealerNetBuyAmount": 0}
+        for cells in payload.get("data") or []:
+            if len(cells) < 4:
+                continue
+            label = str(cells[0])
+            amount = as_int(cells[3])
+            if "外資及陸資" in label or "外資自營商" in label:
+                totals["foreignNetBuyAmount"] += amount
+            elif label == "投信":
+                totals["investmentTrustNetBuyAmount"] += amount
+            elif "自營商" in label:
+                totals["dealerNetBuyAmount"] += amount
+        for key, value in list(totals.items()):
+            totals[f"{key}Format"] = fmt_signed_int(value)
+            totals[f"{key}YiFormat"] = fmt_yi_amount(value, signed=True)
+        return totals
 
-    def _headers(self) -> dict[str, str]:
-        return {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
-            ),
-            "Accept": "application/json,text/plain,*/*",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer": "https://www.twse.com.tw/zh/indices/taiex/mi-5min-hist.html",
-        }
 
-    def _month_start(self, value: date) -> date:
-        return value.replace(day=1)
-
-    def _previous_month(self, value: date) -> date:
-        if value.month == 1:
-            return date(value.year - 1, 12, 1)
-        return date(value.year, value.month - 1, 1)
-
-    def _request_month(self, marker: date) -> dict[str, Any]:
-        query = urllib.parse.urlencode({"date": marker.strftime("%Y%m%d"), "response": "json"})
-        url = f"{TWSE_TAIEX_URL}?{query}"
-        req = urllib.request.Request(url, headers=self._headers())
-        try:
-            with self.opener.open(req, timeout=30) as response:
-                return json.loads(response.read().decode("utf-8-sig"))
-        except urllib.error.URLError as exc:
-            if isinstance(exc.reason, ssl.SSLError):
-                with self.unverified_opener.open(req, timeout=30) as response:
-                    return json.loads(response.read().decode("utf-8-sig"))
-            raise
-
-    def fetch_history(
+class FuturesInstitutionalClient(WebClient):
+    def fetch_day(
         self,
-        limit: int = LOOKBACK_ROWS,
-        latest: date | None = None,
-        cached: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        latest = latest or now_taipei().date()
-        month = self._month_start(latest)
-        rows_by_date: dict[str, dict[str, Any]] = {}
-        last_error: str | None = None
-
-        for _ in range(4):
-            try:
-                marker = latest if month.year == latest.year and month.month == latest.month else date(month.year, month.month, 28)
-                payload = self._request_month(marker)
-                if payload.get("stat") == "OK":
-                    for cells in payload.get("data") or []:
-                        if len(cells) < 5:
-                            continue
-                        trade_date = parse_twse_date(str(cells[0]))
-                        if trade_date > latest:
-                            continue
-                        close = safe_number(cells[4])
-                        rows_by_date[trade_date.isoformat()] = {
-                            "date": trade_date.isoformat(),
-                            "dateLabel": date_label(trade_date),
-                            "close": round(close, 2),
-                            "closeFormat": fmt_float(close),
-                        }
-            except Exception as exc:
-                last_error = str(exc)
-            month = self._previous_month(month)
-            if len(rows_by_date) >= limit + 1:
-                break
-
-        rows = sorted(rows_by_date.values(), key=lambda item: item["date"], reverse=True)[:limit]
-        if not rows and cached and cached.get("rows"):
-            fallback = dict(cached)
-            fallback["lastError"] = last_error or "TWSE market index data is unavailable."
-            return fallback
-        if not rows:
-            raise ValueError(last_error or "No TWSE TAIEX rows were found.")
-
-        attach_market_index_diffs(rows)
-        return {
-            "source": MARKET_INDEX_SOURCE_LABEL,
-            "sourceUrl": TWSE_TAIEX_URL,
-            "productId": "TAIEX",
-            "productName": "加權指數",
-            "rows": rows,
-            "latest": rows[0],
-            "tradeDate": rows[0]["dateLabel"],
-            "fetchedAt": now_taipei().isoformat(timespec="seconds"),
-            "lastError": last_error,
-        }
-
-
-class RetailIndicatorClient:
-    def __init__(self) -> None:
-        self.opener = urllib.request.build_opener()
-
-    def _headers(self, referer: str) -> dict[str, str]:
-        return {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer": referer,
-        }
-
-    def _post(self, url: str, form: dict[str, str]) -> str:
-        headers = self._headers(url)
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
-        data = urllib.parse.urlencode(form).encode("utf-8")
-        for attempt in range(3):
-            req = urllib.request.Request(url, data=data, headers=headers)
-            try:
-                with self.opener.open(req, timeout=30) as response:
-                    return response.read().decode("utf-8", errors="replace")
-            except urllib.error.HTTPError as exc:
-                if exc.code == 429 and attempt < 2:
-                    time.sleep(max(RETAIL_REQUEST_DELAY, 1.5) * (attempt + 1))
-                    continue
-                raise
-        raise RuntimeError("TAIFEX request failed.")
-
-    def latest_trade_date(self) -> date:
-        text = self._post(
+        day: date,
+        product_id: str = FUTURES_PRODUCT_ID,
+        product_name: str = FUTURES_PRODUCT_NAME,
+    ) -> dict[str, Any] | None:
+        text = self.post_text(
             TAIFEX_FUT_CONTRACTS_URL,
-            {
-                "queryDate": taifex_date(now_taipei().date()),
-                "commodityId": MINI_FUTURES_CONTRACTS_ID,
-                "queryType": "",
-                "goDay": "",
-                "doQuery": "1",
-                "dateaddcnt": "",
-            },
+            {"queryDate": taifex_date(day), "commodityId": product_id, "queryType": "", "goDay": "", "doQuery": "1", "dateaddcnt": ""},
         )
         try:
-            return extract_display_date(text)
-        except ValueError:
-            return now_taipei().date()
-
-    def fetch_day(self, query_date: date) -> dict[str, Any] | None:
-        contract_text = self._post(
-            TAIFEX_FUT_CONTRACTS_URL,
-            {
-                "queryDate": taifex_date(query_date),
-                "commodityId": MINI_FUTURES_CONTRACTS_ID,
-                "queryType": "",
-                "goDay": "",
-                "doQuery": "1",
-                "dateaddcnt": "",
-            },
-        )
-        try:
-            displayed_date = extract_display_date(contract_text)
+            if extract_display_date(text) != day:
+                return None
         except ValueError:
             return None
-        if displayed_date != query_date:
-            return None
+        parser = TableParser()
+        parser.feed(text)
+        values: dict[str, Any] = {}
+        current_product = ""
+        for cells in parser.rows:
+            if len(cells) >= 15 and cells[0].isdigit():
+                current_product = cells[1]
+                identity_label = cells[2]
+                numbers = cells[3:]
+            elif len(cells) >= 13 and cells[0] in IDENTITY_KEYS:
+                identity_label = cells[0]
+                numbers = cells[1:]
+            else:
+                continue
+            if current_product != product_name:
+                continue
+            identity = IDENTITY_KEYS.get(identity_label)
+            if not identity or len(numbers) < 12:
+                continue
+            long_lot = as_int(numbers[6])
+            short_lot = as_int(numbers[8])
+            net_lot = as_int(numbers[10])
+            values[identity] = {
+                "long": long_lot,
+                "short": short_lot,
+                "net": net_lot,
+                "longFormat": fmt_int(long_lot),
+                "shortFormat": fmt_int(short_lot),
+                "netFormat": fmt_signed_int(net_lot),
+            }
+        return values or None
 
-        daily_text = self._post(
+
+class MiniRetailFuturesClient(WebClient):
+    def __init__(self, institutional_client: FuturesInstitutionalClient) -> None:
+        super().__init__()
+        self.institutional_client = institutional_client
+
+    def fetch_total_open_interest(self, day: date) -> int | None:
+        text = self.post_text(
             TAIFEX_FUT_DAILY_URL,
             {
-                "queryDate": taifex_date(query_date),
+                "queryDate": taifex_date(day),
                 "MarketCode": "0",
-                "commodity_id": MINI_FUTURES_MARKET_ID,
+                "commodity_idt": MINI_FUTURES_DAILY_ID,
+                "commodity_id": MINI_FUTURES_DAILY_ID,
+                "commodity_id2": "",
+                "commodity_id2t": "",
+                "commodity_id2t2": "",
+                "queryType": "",
+                "dateaddcnt": "",
+                "button": "送出查詢",
             },
+            TAIFEX_FUT_DAILY_URL,
         )
-        institutional = parse_mini_futures_institutional_page(contract_text)
-        market = parse_mini_futures_daily_page(daily_text)
-        total_open_interest = market["openInterest"]
-        if total_open_interest <= 0:
+        try:
+            if extract_display_date(text) != day:
+                return None
+        except ValueError:
             return None
+        parser = TableParser()
+        parser.feed(text)
+        total = 0
+        for cells in parser.rows:
+            if len(cells) >= 13 and cells[0] == MINI_FUTURES_DAILY_ID and "/" not in cells[1]:
+                total += as_int(cells[12])
+        return total or None
 
-        retail_net = -institutional["institutionalNet"]
-        retail_long = total_open_interest - institutional["institutionalLong"]
-        retail_short = total_open_interest - institutional["institutionalShort"]
-        ratio = round(retail_net / total_open_interest * 100, 2)
-
-        row = {
-            "date": query_date.isoformat(),
-            "dateLabel": date_label(query_date),
-            "close": market["close"],
-            "settlement": market["settlement"],
+    def fetch_day(self, day: date) -> dict[str, Any] | None:
+        total_open_interest = self.fetch_total_open_interest(day)
+        institutional = self.institutional_client.fetch_day(
+            day,
+            product_id=MINI_FUTURES_INSTITUTIONAL_ID,
+            product_name=MINI_FUTURES_PRODUCT_NAME,
+        )
+        if not total_open_interest or not institutional:
+            return None
+        institutional_long = sum(as_int(item.get("long")) for item in institutional.values())
+        institutional_short = sum(as_int(item.get("short")) for item in institutional.values())
+        institutional_net = institutional_long - institutional_short
+        retail_position = -1 * institutional_net
+        ratio = round(retail_position / total_open_interest * 100, 2) if total_open_interest else 0
+        result = {
             "totalOpenInterest": total_open_interest,
-            "institutionalLong": institutional["institutionalLong"],
-            "institutionalShort": institutional["institutionalShort"],
-            "institutionalNet": institutional["institutionalNet"],
-            "retailLong": retail_long,
-            "retailShort": retail_short,
-            "retailNet": retail_net,
+            "institutionalLong": institutional_long,
+            "institutionalShort": institutional_short,
+            "institutionalNet": institutional_net,
+            "retailPosition": retail_position,
             "retailLongShortRatio": ratio,
-            "retailLongFormat": fmt_int(retail_long),
-            "retailShortFormat": fmt_int(retail_short),
-            "retailNetFormat": fmt_signed(retail_net),
+            "bias": "long" if ratio > 0 else "short" if ratio < 0 else "neutral",
+        }
+        result.update({
             "totalOpenInterestFormat": fmt_int(total_open_interest),
-            "retailLongShortRatioFormat": f"{ratio:.2f}%",
-            "bias": retail_bias_label(ratio),
-            "formula": "-1 * 小台指三大法人未平倉淨額 / 小台全體未平倉量",
-        }
-        return row
+            "institutionalLongFormat": fmt_int(institutional_long),
+            "institutionalShortFormat": fmt_int(institutional_short),
+            "institutionalNetFormat": fmt_signed_int(institutional_net),
+            "retailPositionFormat": fmt_signed_int(retail_position),
+            "retailLongShortRatioFormat": fmt_signed_percent(ratio),
+        })
+        return result
 
-    def fetch_history(
-        self,
-        limit: int = LOOKBACK_ROWS,
-        latest: date | None = None,
-        cached: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        latest = latest or self.latest_trade_date()
-        rows_by_date: dict[str, dict[str, Any]] = {}
-        if cached and cached.get("source") == RETAIL_SOURCE_LABEL:
-            for row in cached.get("rows") or []:
-                if row.get("date") and row.get("totalOpenInterest"):
-                    rows_by_date[row["date"]] = row
 
-        rows: list[dict[str, Any]] = []
-        cursor = latest
-        misses = 0
-        max_calendar_days = max(limit * 3, 90)
-        new_fetches = 0
-        last_fetch_error: str | None = None
-
-        while len(rows) < limit and misses <= max_calendar_days:
-            if cursor.weekday() >= 5:
-                cursor -= timedelta(days=1)
-                misses += 1
+class LargeTraderClient(WebClient):
+    def fetch_day(self, day: date) -> dict[str, Any] | None:
+        text = self.post_text(
+            TAIFEX_LARGE_TRADER_URL,
+            {"queryDate": taifex_date(day), "contractId": "TX", "contractId2": "", "datecount": ""},
+        )
+        try:
+            if extract_display_date(text) != day:
+                return None
+        except ValueError:
+            return None
+        parser = TableParser()
+        parser.feed(text)
+        current_product = ""
+        for cells in parser.rows:
+            if not cells:
                 continue
-            key = cursor.isoformat()
-            item = rows_by_date.get(key)
-            if item is None and new_fetches < RETAIL_MAX_NEW_DAYS:
-                try:
-                    item = self.fetch_day(cursor)
-                    new_fetches += 1
-                    if RETAIL_REQUEST_DELAY > 0:
-                        time.sleep(RETAIL_REQUEST_DELAY)
-                except Exception as exc:
-                    last_fetch_error = str(exc)
-                    item = None
-                    break
-            if item:
-                rows.append(item)
-            cursor -= timedelta(days=1)
-            misses += 1
-
-        if not rows:
-            if last_fetch_error:
-                raise RuntimeError(last_fetch_error)
-            raise ValueError("No official TAIFEX mini futures retail indicator rows were found.")
-        rows.sort(key=lambda item: item["date"], reverse=True)
-        attach_retail_diffs(rows)
-        return {
-            "source": RETAIL_SOURCE_LABEL,
-            "sourceUrl": TAIFEX_FUT_CONTRACTS_URL,
-            "marketSourceUrl": TAIFEX_FUT_DAILY_URL,
-            "productId": MINI_FUTURES_MARKET_ID,
-            "productName": MINI_FUTURES_NAME,
-            "rows": rows,
-            "latest": rows[0] if rows else None,
-            "fetchedAt": now_taipei().isoformat(timespec="seconds"),
-            "lastError": last_fetch_error,
-        }
+            row = list(cells)
+            if row[0].startswith("臺股期貨"):
+                current_product = row[0]
+                row = row[1:]
+            if current_product.startswith(FUTURES_COMBO_NAME) and len(row) >= 10 and row[0] == "所有契約":
+                result = {
+                    "contractScope": row[0],
+                    "top5Long": first_parenthetical_number(row[1]),
+                    "top5LongPercent": first_percent(row[2]),
+                    "top10Long": first_parenthetical_number(row[3]),
+                    "top10LongPercent": first_percent(row[4]),
+                    "top5Short": first_parenthetical_number(row[5]),
+                    "top5ShortPercent": first_percent(row[6]),
+                    "top10Short": first_parenthetical_number(row[7]),
+                    "top10ShortPercent": first_percent(row[8]),
+                    "marketOpenInterest": as_int(row[9]),
+                }
+                result["top5Net"] = result["top5Long"] - result["top5Short"]
+                result["top10Net"] = result["top10Long"] - result["top10Short"]
+                result["top5Bias"] = "long" if result["top5Net"] > 0 else "short" if result["top5Net"] < 0 else "neutral"
+                result["top10Bias"] = "long" if result["top10Net"] > 0 else "short" if result["top10Net"] < 0 else "neutral"
+                for key, value in list(result.items()):
+                    if isinstance(value, (int, float)):
+                        result[f"{key}Format"] = fmt_percent(value) if key.endswith("Percent") else fmt_signed_int(value) if key.endswith("Net") else fmt_int(value)
+                return result
+        return None
 
 
-def parse_mini_futures_institutional_page(text: str) -> dict[str, int]:
-    parser = TableParser()
-    parser.feed(text)
-    values = {"institutionalLong": 0, "institutionalShort": 0, "institutionalNet": 0}
-
-    for cells in parser.rows:
-        if not cells:
-            continue
-        if len(cells) >= 15 and cells[0].isdigit() and cells[1] == MINI_FUTURES_NAME:
-            values["institutionalLong"] += as_int(cells[9])
-            values["institutionalShort"] += as_int(cells[11])
-            values["institutionalNet"] += as_int(cells[13])
-        elif len(cells) >= 13 and cells[0] in IDENTITY_KEYS:
-            values["institutionalLong"] += as_int(cells[7])
-            values["institutionalShort"] += as_int(cells[9])
-            values["institutionalNet"] += as_int(cells[11])
-
-    if not values["institutionalLong"] and not values["institutionalShort"]:
-        raise ValueError(f"No {MINI_FUTURES_NAME} institutional open interest rows were found.")
-    return values
-
-
-def parse_mini_futures_daily_page(text: str) -> dict[str, int]:
-    parser = TableParser()
-    parser.feed(text)
-    front_close = 0
-    front_settlement = 0
-    total_open_interest = 0
-
-    for cells in parser.rows:
-        if len(cells) < 13 or cells[0] != MINI_FUTURES_MARKET_ID:
-            continue
-        expiry = cells[1]
-        if "/" in expiry:
-            continue
-        if not front_close:
-            front_close = as_int(cells[5])
-            front_settlement = as_int(cells[11])
-        total_open_interest += as_int(cells[12])
-
-    if total_open_interest <= 0:
-        raise ValueError(f"No {MINI_FUTURES_MARKET_ID} daily market open interest rows were found.")
-    return {
-        "close": front_close,
-        "settlement": front_settlement,
-        "openInterest": total_open_interest,
-    }
+class PcRatioClient(WebClient):
+    def fetch_history(self) -> dict[str, dict[str, Any]]:
+        text = self.get_text(TAIFEX_PC_RATIO_URL)
+        parser = TableParser()
+        parser.feed(text)
+        rows: dict[str, dict[str, Any]] = {}
+        for cells in parser.rows:
+            if len(cells) < 7 or "/" not in cells[0]:
+                continue
+            try:
+                day = parse_taifex_date(cells[0])
+            except ValueError:
+                continue
+            row = {
+                "putVolume": as_int(cells[1]),
+                "callVolume": as_int(cells[2]),
+                "volumePcr": round(safe_number(cells[3]), 2),
+                "putOpenInterest": as_int(cells[4]),
+                "callOpenInterest": as_int(cells[5]),
+                "openInterestPcr": round(safe_number(cells[6]), 2),
+            }
+            row.update({
+                "putVolumeFormat": fmt_int(row["putVolume"]),
+                "callVolumeFormat": fmt_int(row["callVolume"]),
+                "volumePcrFormat": fmt_percent(row["volumePcr"]),
+                "putOpenInterestFormat": fmt_int(row["putOpenInterest"]),
+                "callOpenInterestFormat": fmt_int(row["callOpenInterest"]),
+                "openInterestPcrFormat": fmt_percent(row["openInterestPcr"]),
+            })
+            rows[date_label(day)] = row
+        return rows
 
 
 def extract_display_date(text: str) -> date:
-    match = re.search(r"日期\s*(\d{4}/\d{2}/\d{2})", text)
+    match = re.search(r"(\d{4}/\d{2}/\d{2})", text)
     if not match:
-        raise ValueError("TAIFEX page did not include a data date.")
+        raise ValueError("page did not include a data date")
     return parse_taifex_date(match.group(1))
 
 
-def attach_retail_diffs(rows: list[dict[str, Any]]) -> None:
-    for index, row in enumerate(rows):
-        previous = rows[index + 1] if index + 1 < len(rows) else None
-        ratio_diff = safe_number(row.get("retailLongShortRatio")) - safe_number(previous.get("retailLongShortRatio")) if previous else 0
-        long_diff = as_int(row.get("retailLong")) - as_int(previous.get("retailLong")) if previous else 0
-        short_diff = as_int(row.get("retailShort")) - as_int(previous.get("retailShort")) if previous else 0
-        row["retailLongShortRatioDiff"] = round(ratio_diff, 2)
-        row["retailLongShortRatioDiffFormat"] = f"{ratio_diff:+.2f}%"
-        row["retailLongDiff"] = long_diff
-        row["retailShortDiff"] = short_diff
-        row["retailLongDiffFormat"] = fmt_signed(long_diff)
-        row["retailShortDiffFormat"] = fmt_signed(short_diff)
-
-
-def attach_market_index_diffs(rows: list[dict[str, Any]]) -> None:
-    for index, row in enumerate(rows):
-        previous = rows[index + 1] if index + 1 < len(rows) else None
-        close = safe_number(row.get("close"))
-        previous_close = safe_number(previous.get("close")) if previous else 0
-        change = close - previous_close if previous else 0
-        change_percent = (change / previous_close * 100) if previous_close else 0
-        row["previousClose"] = round(previous_close, 2) if previous else None
-        row["previousCloseFormat"] = fmt_float(previous_close) if previous else "-"
-        row["change"] = round(change, 2)
-        row["changeFormat"] = fmt_signed_float(change)
-        row["changePercent"] = round(change_percent, 2)
-        row["changePercentFormat"] = fmt_signed_percent(change_percent)
-
-
-def retail_bias_label(ratio: Any) -> str:
-    value = safe_number(ratio)
-    if value >= 15:
-        return "偏多"
-    if value <= -15:
-        return "偏空"
-    return "中性"
-
-
-def parse_calls_puts_page(text: str, trade_date: date) -> dict[str, Any]:
+def parse_option_institutional(text: str, trade_date: date) -> dict[str, Any]:
     parser = TableParser()
     parser.feed(text)
-
+    raw: dict[str, dict[str, OptionSide]] = {key: {"買權": OptionSide(), "賣權": OptionSide()} for key in IDENTITY_ORDER}
     current_product = ""
     current_option = ""
-    raw: dict[str, dict[str, OptionSide]] = {
-        identity: {"買權": OptionSide(), "賣權": OptionSide()} for identity in IDENTITY_ORDER
-    }
-
     for cells in parser.rows:
         if not cells:
             continue
         if cells[0].isdigit() and len(cells) >= 16:
-            current_product = cells[1]
-            current_option = cells[2]
-            identity_label = cells[3]
-            numbers = cells[4:]
+            current_product, current_option, identity_label, numbers = cells[1], cells[2], cells[3], cells[4:]
         elif cells[0] in {"買權", "賣權"} and len(cells) >= 14:
-            current_option = cells[0]
-            identity_label = cells[1]
-            numbers = cells[2:]
+            current_option, identity_label, numbers = cells[0], cells[1], cells[2:]
         elif cells[0] in IDENTITY_KEYS and len(cells) >= 13:
-            identity_label = cells[0]
-            numbers = cells[1:]
+            identity_label, numbers = cells[0], cells[1:]
         else:
             continue
-
         if current_product != PRODUCT_NAME or current_option not in {"買權", "賣權"}:
             continue
         identity = IDENTITY_KEYS.get(identity_label)
-        if not identity or len(numbers) < 12:
+        if not identity or len(numbers) < 10:
             continue
-
         raw[identity][current_option] = OptionSide(
             oi_buy_lot=as_int(numbers[6]),
             oi_buy_amount=as_int(numbers[7]),
             oi_sell_lot=as_int(numbers[8]),
             oi_sell_amount=as_int(numbers[9]),
         )
-
-    if not any(raw[identity]["買權"].oi_buy_lot or raw[identity]["賣權"].oi_buy_lot for identity in IDENTITY_ORDER):
-        raise ValueError(f"No {PRODUCT_NAME} rows were found on TAIFEX page.")
-
-    row: dict[str, Any] = {
-        "date": trade_date.isoformat(),
-        "dateLabel": date_label(trade_date),
-        "raw": {
-            identity: {
-                option: side.__dict__
-                for option, side in sides.items()
-            }
-            for identity, sides in raw.items()
-        },
-    }
-
+    txo: dict[str, Any] = {}
     for identity in IDENTITY_ORDER:
         call = raw[identity]["買權"]
         put = raw[identity]["賣權"]
-        prefix = identity
-        row[f"{prefix}BullLot"] = call.oi_buy_lot + put.oi_sell_lot
-        row[f"{prefix}BullAmount"] = call.oi_buy_amount + put.oi_sell_amount
-        row[f"{prefix}BearLot"] = put.oi_buy_lot + call.oi_sell_lot
-        row[f"{prefix}BearAmount"] = put.oi_buy_amount + call.oi_sell_amount
-        row[f"{prefix}NetLot"] = row[f"{prefix}BullLot"] - row[f"{prefix}BearLot"]
-        row[f"{prefix}NetAmount"] = row[f"{prefix}BullAmount"] - row[f"{prefix}BearAmount"]
-
-    return row
-
-
-def attach_diffs(rows: list[dict[str, Any]]) -> None:
-    metric_suffixes = ["BullLot", "BullAmount", "BearLot", "BearAmount", "NetLot", "NetAmount"]
-    for index, row in enumerate(rows):
-        previous = rows[index + 1] if index + 1 < len(rows) else None
-        for identity in IDENTITY_ORDER:
-            for suffix in metric_suffixes:
-                key = f"{identity}{suffix}"
-                value = as_int(row.get(key))
-                diff = value - as_int(previous.get(key)) if previous else 0
-                row[f"{key}Format"] = fmt_int(value)
-                row[f"{key}Diff"] = diff
-                row[f"{key}DiffFormat"] = fmt_signed(diff)
-
-
-def empty_retail_indicator(last_error: str | None = None) -> dict[str, Any]:
-    return {
-        "source": RETAIL_SOURCE_LABEL,
-        "sourceUrl": TAIFEX_FUT_CONTRACTS_URL,
-        "marketSourceUrl": TAIFEX_FUT_DAILY_URL,
-        "productId": MINI_FUTURES_MARKET_ID,
-        "productName": MINI_FUTURES_NAME,
-        "rows": [],
-        "latest": None,
-        "fetchedAt": None,
-        "lastError": last_error,
-    }
-
-
-def empty_market_index(last_error: str | None = None) -> dict[str, Any]:
-    return {
-        "source": MARKET_INDEX_SOURCE_LABEL,
-        "sourceUrl": TWSE_TAIEX_URL,
-        "productId": "TAIEX",
-        "productName": "加權指數",
-        "rows": [],
-        "latest": None,
-        "fetchedAt": None,
-        "lastError": last_error,
-    }
-
-
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
-
-
-def tone_for_value(value: Any) -> str:
-    numeric = safe_number(value)
-    if numeric > 0:
-        return "up"
-    if numeric < 0:
-        return "dn"
-    return "neutral"
-
-
-def score_market_signal(
-    foreign_amount: Any,
-    foreign_amount_diff: Any,
-    foreign_lot: Any,
-    retail_ratio: Any,
-    market_change_pct: Any,
-) -> int:
-    amount = safe_number(foreign_amount)
-    amount_diff = safe_number(foreign_amount_diff)
-    lot = safe_number(foreign_lot)
-    ratio = safe_number(retail_ratio)
-    change_pct = safe_number(market_change_pct)
-
-    score = 50.0
-    score += 18 if amount > 0 else -18 if amount < 0 else 0
-    score += 8 if amount_diff > 0 else -8 if amount_diff < 0 else 0
-    score += 8 if lot > 0 else -8 if lot < 0 else 0
-    score += 6 if change_pct > 0 else -6 if change_pct < 0 else 0
-    if ratio >= 25:
-        score -= 8
-    elif ratio <= -25:
-        score += 8
-    if amount < 0 and ratio > 20:
-        score -= 6
-    elif amount > 0 and ratio < -20:
-        score += 6
-    return int(round(clamp(score, 0, 100)))
-
-
-def normalized_signal_score(raw_score: Any) -> float:
-    return round(clamp(safe_number(raw_score) / 100, 0, 1), 4)
-
-
-def fmt_signal_percent(value: Any) -> str:
-    return f"{safe_number(value) * 100:.0f}%"
-
-
-def market_signal_breakdown(
-    foreign_amount: Any,
-    foreign_amount_diff: Any,
-    foreign_lot: Any,
-    retail_ratio: Any,
-    market_change_pct: Any,
-) -> list[dict[str, Any]]:
-    amount = safe_number(foreign_amount)
-    amount_diff = safe_number(foreign_amount_diff)
-    lot = safe_number(foreign_lot)
-    ratio = safe_number(retail_ratio)
-    change_pct = safe_number(market_change_pct)
-    def item(label: str, raw_points: int, reason: str, tone: str | None = None, show_sign: bool = True) -> dict[str, Any]:
-        value = round(raw_points / 100, 4)
-        if raw_points > 0 and show_sign:
-            points_format = f"+{raw_points}%"
-        elif raw_points < 0:
-            points_format = f"{raw_points}%"
-        else:
-            points_format = f"{raw_points}%"
-        return {
-            "label": label,
-            "points": value,
-            "pointsFormat": points_format,
-            "rawPoints": raw_points,
-            "reason": reason,
-            "tone": tone,
+        bull_lot = call.oi_buy_lot + put.oi_sell_lot
+        bear_lot = put.oi_buy_lot + call.oi_sell_lot
+        net_lot = bull_lot - bear_lot
+        txo[identity] = {
+            "bullLot": bull_lot,
+            "bearLot": bear_lot,
+            "netLot": net_lot,
+            "bullLotFormat": fmt_int(bull_lot),
+            "bearLotFormat": fmt_int(bear_lot),
+            "netLotFormat": fmt_signed_int(net_lot),
         }
+    if not any((txo[identity]["bullLot"] or txo[identity]["bearLot"]) for identity in IDENTITY_ORDER):
+        raise ValueError(f"No {PRODUCT_NAME} rows were found.")
+    foreign_call = raw["foreign"]["買權"]
+    foreign_put = raw["foreign"]["賣權"]
+    bull_amount = foreign_call.oi_buy_amount + foreign_put.oi_sell_amount
+    bear_amount = foreign_put.oi_buy_amount + foreign_call.oi_sell_amount
+    net_amount = bull_amount - bear_amount
+    return {
+        "date": trade_date.isoformat(),
+        "dateLabel": date_label(trade_date),
+        "foreignOptionAmount": {
+            "bullAmount": bull_amount,
+            "bearAmount": bear_amount,
+            "netAmount": net_amount,
+            "bullAmountFormat": fmt_int(bull_amount),
+            "bearAmountFormat": fmt_int(bear_amount),
+            "netAmountFormat": fmt_signed_int(net_amount),
+        },
+        "txoInstitutionalOpenInterest": txo,
+    }
 
-    items: list[dict[str, Any]] = [
-        item("中性基準", 50, "中性起點 50%", "neutral-text", False),
-        item("外資合成金額", 18 if amount > 0 else -18 if amount < 0 else 0, "正值偏多，負值偏空"),
-        item("外資金額日變化", 8 if amount_diff > 0 else -8 if amount_diff < 0 else 0, "金額增加加分，減少扣分"),
-        item("外資口數淨額", 8 if lot > 0 else -8 if lot < 0 else 0, "口數正值加分，負值扣分"),
-        item("大盤漲跌", 6 if change_pct > 0 else -6 if change_pct < 0 else 0, "大盤上漲加分，下跌扣分"),
+
+def empty_payload(error: str | None = None) -> dict[str, Any]:
+    return {
+        "schemaVersion": 2,
+        "source": "TWSE/TAIFEX 每日籌碼總覽",
+        "sourceUrls": {
+            "twseMarket": TWSE_MI_INDEX_URL,
+            "twseInstitutional": TWSE_T86_URL,
+            "taifexOption": TAIFEX_CALLS_PUTS_URL,
+            "taifexFutures": TAIFEX_FUT_CONTRACTS_URL,
+            "taifexLargeTrader": TAIFEX_LARGE_TRADER_URL,
+            "taifexFuturesDaily": TAIFEX_FUT_DAILY_URL,
+            "taifexPcr": TAIFEX_PC_RATIO_URL,
+        },
+        "rows": [],
+        "latest": None,
+        "fetchedAt": None,
+        "lastError": error,
+    }
+
+
+def with_diffs(rows: list[dict[str, Any]]) -> None:
+    paths = [
+        ("marketIndex", "taiexClose"),
+        ("marketIndex", "taiexChange"),
+        ("marketIndex", "taiexChangePercent"),
+        ("cashMarket", "listedVolume"),
+        ("cashMarket", "listedAmount"),
+        ("spotInstitutional", "foreignNetBuyAmount"),
+        ("spotInstitutional", "investmentTrustNetBuyAmount"),
+        ("spotInstitutional", "dealerNetBuyAmount"),
+        ("largeTraderFutures", "top5Net"),
+        ("largeTraderFutures", "top10Net"),
+        ("retailMiniFutures", "retailLongShortRatio"),
+        ("retailMiniFutures", "retailPosition"),
+        ("foreignOptionAmount", "netAmount"),
+        ("optionPcr", "volumePcr"),
+        ("optionPcr", "openInterestPcr"),
     ]
-    if ratio >= 25:
-        items.append(item("散戶多空比", -8, "散戶偏多過熱扣分"))
-    elif ratio <= -25:
-        items.append(item("散戶多空比", 8, "散戶偏空過深加分"))
-    else:
-        items.append(item("散戶多空比", 0, "未達極端區"))
-    if amount < 0 and ratio > 20:
-        items.append(item("法人散戶背離", -6, "外資偏空且散戶偏多"))
-    elif amount > 0 and ratio < -20:
-        items.append(item("法人散戶背離", 6, "外資偏多且散戶偏空"))
-    else:
-        items.append(item("法人散戶背離", 0, "未觸發背離調整"))
-    return items
-
-
-def stance_from_score(score: int) -> tuple[str, str]:
-    if score >= 68:
-        return "偏多觀察", "up"
-    if score <= 32:
-        return "偏空防守", "dn"
-    return "中性等待", "neutral"
-
-
-def pct_change(next_value: Any, current_value: Any) -> float:
-    current = safe_number(current_value)
-    if current == 0:
-        return 0.0
-    return (safe_number(next_value) - current) / current * 100
-
-
-def outcome_success(stance: str, next_return: float) -> bool:
-    if stance == "偏多觀察":
-        return next_return > 0
-    if stance == "偏空防守":
-        return next_return < 0
-    return abs(next_return) < 0.35
-
-
-def build_signal_stats(payload: dict[str, Any], current_insight: dict[str, Any]) -> dict[str, Any]:
-    rows = payload.get("rows") or []
-    retail_rows = (payload.get("retailIndicator") or {}).get("rows") or []
-    market_rows = (payload.get("marketIndex") or {}).get("rows") or []
-    retail_by_date = {row.get("dateLabel"): row for row in retail_rows}
-    market_by_date = {row.get("dateLabel"): row for row in market_rows}
-    samples: list[dict[str, Any]] = []
-
-    for index in range(1, max(len(rows) - 1, 1)):
-        row = rows[index]
+    for index, row in enumerate(rows):
         previous = rows[index + 1] if index + 1 < len(rows) else {}
-        next_row = rows[index - 1]
-        market_row = market_by_date.get(row.get("dateLabel")) or {}
-        next_market = market_by_date.get(next_row.get("dateLabel")) or {}
-        if not market_row or not next_market:
-            continue
-        signal_score = score_market_signal(
-            row.get("foreignNetAmount"),
-            row.get("foreignNetAmountDiff"),
-            row.get("foreignNetLot"),
-            (retail_by_date.get(row.get("dateLabel")) or {}).get("retailLongShortRatio"),
-            market_row.get("changePercent"),
-        )
-        stance, tone = stance_from_score(signal_score)
-        next_return = pct_change(next_market.get("close"), market_row.get("close"))
-        samples.append({
-            "dateLabel": row.get("dateLabel"),
-            "nextDateLabel": next_row.get("dateLabel"),
-            "rawScore": signal_score,
-            "score": normalized_signal_score(signal_score),
-            "scoreFormat": fmt_signal_percent(normalized_signal_score(signal_score)),
-            "stance": stance,
-            "tone": tone,
-            "nextReturn": round(next_return, 2),
-            "nextReturnFormat": fmt_signed_percent(next_return),
-            "success": outcome_success(stance, next_return),
-            "foreignAmount": row.get("foreignNetAmountFormat", fmt_int(row.get("foreignNetAmount"))),
-            "foreignAmountChange": row.get("foreignNetAmountDiffFormat", fmt_signed(row.get("foreignNetAmountDiff"))),
-            "previousForeignAmount": previous.get("foreignNetAmountFormat", "-"),
-        })
+        for section, key in paths:
+            current_section = row.get(section) or {}
+            prev_section = previous.get(section) or {}
+            if key not in current_section:
+                continue
+            diff = safe_number(current_section.get(key)) - safe_number(prev_section.get(key)) if prev_section else 0
+            current_section[f"{key}Diff"] = round(diff, 2)
+            if "Percent" in key or "Pcr" in key or "Ratio" in key:
+                current_section[f"{key}DiffFormat"] = fmt_signed_float(diff)
+            elif key.endswith("Amount") or key.endswith("BuyAmount") or key == "listedAmount":
+                current_section[f"{key}DiffFormat"] = fmt_yi_amount(diff, signed=True)
+            else:
+                current_section[f"{key}DiffFormat"] = fmt_signed_int(diff)
 
-    current_stance = current_insight.get("stance")
-    similar = [sample for sample in samples if sample.get("stance") == current_stance]
-    if not similar:
-        similar = samples
-    sample_size = len(similar)
-    wins = sum(1 for sample in similar if sample.get("success"))
-    avg_return = sum(float(sample.get("nextReturn") or 0) for sample in similar) / sample_size if sample_size else 0
-    win_rate = wins / sample_size * 100 if sample_size else 0
-    if sample_size < 3:
-        reliability = "樣本不足"
-    elif win_rate >= 60:
-        reliability = "偏有效"
-    elif win_rate <= 40:
-        reliability = "反向參考"
+
+def merge_row(base: dict[str, Any], previous: dict[str, Any] | None, section: str, value: Any) -> None:
+    if value:
+        base[section] = value
+    elif previous and previous.get(section):
+        base[section] = previous[section]
+        base.setdefault("missingSources", []).append(section)
     else:
-        reliability = "普通"
-    return {
-        "window": f"近 {LOOKBACK_ROWS} 日",
-        "method": "相同市場訊號隔日大盤方向統計",
-        "sampleSize": sample_size,
-        "wins": wins,
-        "winRate": round(win_rate, 1),
-        "winRateFormat": f"{win_rate:.1f}%",
-        "avgNextReturn": round(avg_return, 2),
-        "avgNextReturnFormat": fmt_signed_percent(avg_return),
-        "reliability": reliability,
-        "samples": similar[:5],
-    }
-
-
-def build_signal_alerts(payload: dict[str, Any], insight: dict[str, Any]) -> list[dict[str, str]]:
-    latest = payload.get("latest") or {}
-    retail_latest = (payload.get("retailIndicator") or {}).get("latest") or {}
-    market_latest = (payload.get("marketIndex") or {}).get("latest") or {}
-    alerts: list[dict[str, str]] = []
-    raw_score = safe_number(insight.get("rawScore"), 50)
-    foreign_amount = safe_number(latest.get("foreignNetAmount"))
-    foreign_amount_diff = safe_number(latest.get("foreignNetAmountDiff"))
-    retail_ratio = safe_number(retail_latest.get("retailLongShortRatio"))
-    market_change_pct = safe_number(market_latest.get("changePercent"))
-
-    if raw_score <= 20:
-        alerts.append({"level": "high", "label": "極端偏空", "text": "市場訊號低於 20%，隔日優先觀察反彈失敗或續弱。"})
-    elif raw_score >= 80:
-        alerts.append({"level": "high", "label": "極端偏多", "text": "市場訊號高於 80%，隔日優先觀察追價延續性。"})
-    if abs(foreign_amount_diff) >= 500000:
-        alerts.append({"level": "medium", "label": "外資金額劇烈變化", "text": f"外資合成部位金額日變化 {latest.get('foreignNetAmountDiffFormat', fmt_signed(foreign_amount_diff))} 千元。"})
-    if foreign_amount < 0 and retail_ratio >= 30:
-        alerts.append({"level": "high", "label": "法人散戶背離", "text": "外資金額偏空但散戶多空比偏高，容易形成震盪或回檔壓力。"})
-    if foreign_amount > 0 and retail_ratio <= -30:
-        alerts.append({"level": "medium", "label": "反向擠壓觀察", "text": "外資金額偏多但散戶偏空，若大盤轉強可能出現追價修正。"})
-    if abs(market_change_pct) < 0.2 and abs(foreign_amount_diff) >= 300000:
-        alerts.append({"level": "medium", "label": "盤面平靜但籌碼移動", "text": "大盤漲跌不大，但外資合成部位已明顯移動。"})
-    if not alerts:
-        alerts.append({"level": "low", "label": "無極端警示", "text": "目前訊號未觸發極端條件，持續觀察下一筆日變化。"})
-    return alerts[:4]
-
-
-def build_market_insights(payload: dict[str, Any]) -> dict[str, Any]:
-    latest = payload.get("latest") or {}
-    rows = payload.get("rows") or []
-    previous = rows[1] if len(rows) > 1 else {}
-    retail_payload = payload.get("retailIndicator") or {}
-    retail_latest = retail_payload.get("latest") or {}
-    retail_rows = retail_payload.get("rows") or []
-    retail_previous = retail_rows[1] if len(retail_rows) > 1 else {}
-    market_latest = (payload.get("marketIndex") or {}).get("latest") or {}
-
-    foreign_amount = safe_number(latest.get("foreignNetAmount"))
-    foreign_amount_diff = safe_number(latest.get("foreignNetAmountDiff"))
-    foreign_lot = safe_number(latest.get("foreignNetLot"))
-    foreign_lot_diff = safe_number(latest.get("foreignNetLotDiff"))
-    retail_ratio = safe_number(retail_latest.get("retailLongShortRatio"))
-    retail_ratio_diff = safe_number(retail_latest.get("retailLongShortRatioDiff"))
-    market_change_pct = safe_number(market_latest.get("changePercent"))
-
-    raw_score = score_market_signal(foreign_amount, foreign_amount_diff, foreign_lot, retail_ratio, market_change_pct)
-    score = normalized_signal_score(raw_score)
-    stance, tone = stance_from_score(raw_score)
-
-    agreement = 0
-    if foreign_amount and foreign_lot and (foreign_amount > 0) == (foreign_lot > 0):
-        agreement += 1
-    if foreign_amount and market_change_pct and (foreign_amount > 0) == (market_change_pct > 0):
-        agreement += 1
-    if foreign_amount and retail_ratio and (foreign_amount > 0) != (retail_ratio > 0):
-        agreement += 1
-    confidence = "高" if agreement >= 2 else "中" if agreement == 1 else "低"
-
-    if foreign_amount < 0 and retail_ratio > 20:
-        summary = "外資合成部位偏空，散戶偏多，盤勢容易出現壓力或震盪。"
-    elif foreign_amount > 0 and retail_ratio < -20:
-        summary = "外資合成部位偏多，散戶偏空，籌碼方向偏向法人主導。"
-    elif foreign_amount > 0:
-        summary = "外資合成部位偏多，短線以追蹤延續性為主。"
-    elif foreign_amount < 0:
-        summary = "外資合成部位偏空，短線以風險控管與反彈強度為主。"
-    else:
-        summary = "外資合成部位接近中性，等待下一筆明確變化。"
-
-    bullets = [
-        f"外資選擇權合成部位金額 {latest.get('foreignNetAmountFormat', fmt_int(foreign_amount))} 千元，日變化 {latest.get('foreignNetAmountDiffFormat', fmt_signed(foreign_amount_diff))}。",
-        f"外資口數淨額 {fmt_signed(foreign_lot)}，日變化 {fmt_signed(foreign_lot_diff)}。",
-    ]
-    if retail_latest:
-        bullets.append(
-            f"小台散戶多空比 {retail_latest.get('retailLongShortRatioFormat', '-')}，前值 {retail_previous.get('retailLongShortRatioFormat', '-')}，變化 {retail_latest.get('retailLongShortRatioDiffFormat', fmt_signed_percent(retail_ratio_diff))}。"
-        )
-    if market_latest:
-        bullets.append(
-            f"大盤收盤 {market_latest.get('closeFormat', '-')}，漲跌 {market_latest.get('changeFormat', '+0.00')} / {market_latest.get('changePercentFormat', '+0.00%')}。"
-        )
-
-    risks: list[str] = []
-    if abs(foreign_amount_diff) > max(abs(safe_number(previous.get("foreignNetAmount"))) * 0.75, 300000):
-        risks.append("外資合成部位金額日變化較大，隔日需觀察是否延續。")
-    if retail_ratio >= 30:
-        risks.append("散戶多空比偏高，若外資不同向，追價風險提高。")
-    if retail_ratio <= -30:
-        risks.append("散戶偏空過深，若外資轉多，容易出現反向修正。")
-    if not risks:
-        risks.append("目前未出現極端單一風險，重點觀察下一筆日變化。")
-
-    return {
-        "dateLabel": latest.get("dateLabel") or retail_latest.get("dateLabel") or market_latest.get("dateLabel"),
-        "rawScore": raw_score,
-        "rawScoreFormat": f"{raw_score}/100",
-        "score": score,
-        "scoreFormat": fmt_signal_percent(score),
-        "scoreBreakdown": market_signal_breakdown(
-            foreign_amount,
-            foreign_amount_diff,
-            foreign_lot,
-            retail_ratio,
-            market_change_pct,
-        ),
-        "stance": stance,
-        "tone": tone,
-        "confidence": confidence,
-        "summary": summary,
-        "bullets": bullets,
-        "risks": risks,
-        "drivers": [
-            {
-                "label": "外資合成金額",
-                "value": latest.get("foreignNetAmountFormat", fmt_int(foreign_amount)),
-                "previous": previous.get("foreignNetAmountFormat", fmt_int(previous.get("foreignNetAmount"))),
-                "change": latest.get("foreignNetAmountDiffFormat", fmt_signed(foreign_amount_diff)),
-                "tone": tone_for_value(foreign_amount),
-            },
-            {
-                "label": "外資口數淨額",
-                "value": fmt_signed(foreign_lot),
-                "previous": fmt_signed(previous.get("foreignNetLot")),
-                "change": fmt_signed(foreign_lot_diff),
-                "tone": tone_for_value(foreign_lot),
-            },
-            {
-                "label": "散戶多空比",
-                "value": retail_latest.get("retailLongShortRatioFormat", "-"),
-                "previous": retail_previous.get("retailLongShortRatioFormat", "-"),
-                "change": retail_latest.get("retailLongShortRatioDiffFormat", fmt_signed_percent(retail_ratio_diff)),
-                "tone": tone_for_value(retail_ratio),
-            },
-            {
-                "label": "大盤漲跌",
-                "value": market_latest.get("changePercentFormat", "-"),
-                "previous": market_latest.get("previousCloseFormat", "-"),
-                "change": market_latest.get("changeFormat", "-"),
-                "tone": tone_for_value(market_change_pct),
-            },
-        ],
-    }
+        base[section] = {}
+        base.setdefault("missingSources", []).append(section)
 
 
 def normalize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        payload = {}
-    payload.setdefault("source", TAIFEX_SOURCE_LABEL)
-    payload.setdefault("sourceUrl", TAIFEX_CALLS_PUTS_URL)
-    payload.setdefault("productId", PRODUCT_ID)
-    payload.setdefault("productName", PRODUCT_NAME)
+    if not isinstance(payload, dict) or payload.get("schemaVersion") != 2:
+        return empty_payload()
     payload.setdefault("rows", [])
-    payload.setdefault("latest", None)
-    payload.setdefault("fetchedAt", None)
-
-    retail = payload.get("retailIndicator")
-    if not isinstance(retail, dict):
-        payload["retailIndicator"] = empty_retail_indicator()
-    else:
-        normalized = empty_retail_indicator(retail.get("lastError"))
-        normalized.update(retail)
-        normalized["rows"] = normalized.get("rows") or []
-        normalized["latest"] = normalized.get("latest") or (normalized["rows"][0] if normalized["rows"] else None)
-        payload["retailIndicator"] = normalized
-
-    market_index = payload.get("marketIndex")
-    if not isinstance(market_index, dict):
-        payload["marketIndex"] = empty_market_index()
-    else:
-        normalized_market = empty_market_index(market_index.get("lastError"))
-        normalized_market.update(market_index)
-        normalized_market["rows"] = normalized_market.get("rows") or []
-        normalized_market["latest"] = normalized_market.get("latest") or (
-            normalized_market["rows"][0] if normalized_market["rows"] else None
-        )
-        payload["marketIndex"] = normalized_market
-    insights = build_market_insights(payload)
-    insights["stats"] = build_signal_stats(payload, insights)
-    insights["alerts"] = build_signal_alerts(payload, insights)
-    payload["insights"] = insights
+    for row in payload["rows"]:
+        market = row.get("marketIndex") or {}
+        change = safe_number(market.get("taiexChange"))
+        change_percent = safe_number(market.get("taiexChangePercent"))
+        if change and change_percent and (change > 0) != (change_percent > 0):
+            fixed_percent = abs(change_percent) * (1 if change > 0 else -1)
+            market["taiexChangePercent"] = round(fixed_percent, 2)
+            market["taiexChangePercentFormat"] = fmt_signed_percent(fixed_percent)
+        row["foreignPositionView"] = build_foreign_position_view(row)
+    payload["latest"] = payload.get("latest") or (payload["rows"][0] if payload["rows"] else None)
+    if payload["rows"]:
+        payload["latest"] = payload["rows"][0]
     return payload
 
 
@@ -1210,364 +1036,28 @@ class DataStore:
 
     def load(self) -> dict[str, Any]:
         if not self.path.exists():
-            return normalize_payload({
-                "source": TAIFEX_SOURCE_LABEL,
-                "sourceUrl": TAIFEX_CALLS_PUTS_URL,
-                "productName": PRODUCT_NAME,
-                "rows": [],
-                "latest": None,
-                "fetchedAt": None,
-            })
-        with self.path.open("r", encoding="utf-8") as file:
-            return normalize_payload(json.load(file))
+            return empty_payload()
+        try:
+            return normalize_payload(json.loads(self.path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            return empty_payload(str(exc))
 
     def save(self, payload: dict[str, Any]) -> None:
         with self.lock:
             ensure_dirs()
-            tmp_path = self.path.with_suffix(".tmp")
-            with tmp_path.open("w", encoding="utf-8") as file:
-                json.dump(payload, file, ensure_ascii=False, indent=2)
-            tmp_path.replace(self.path)
-
-
-def chart_points(rows: list[dict[str, Any]], key: str, limit: int = LOOKBACK_ROWS) -> list[tuple[str, float]]:
-    ordered = list(reversed(rows[:limit]))
-    return [(row["dateLabel"], safe_number(row.get(key))) for row in ordered]
-
-
-def retail_points(payload: dict[str, Any], key: str, limit: int = LOOKBACK_ROWS) -> list[tuple[str, float]]:
-    rows = payload.get("retailIndicator", {}).get("rows", [])
-    ordered = list(reversed(rows[:limit]))
-    return [(row["dateLabel"], safe_number(row.get(key))) for row in ordered]
-
-
-def scale_points(values: list[float], top: float, bottom: float) -> list[float]:
-    if not values:
-        return []
-    min_value, max_value = min(values), max(values)
-    if min_value == max_value:
-        min_value -= 1
-        max_value += 1
-    return [bottom - ((value - min_value) / (max_value - min_value) * (bottom - top)) for value in values]
-
-
-def draw_overview_chart_png(payload: dict[str, Any], path: Path) -> None:
-    if Image is None or ImageDraw is None:
-        return
-
-    width, height = 1200, 675
-    img = Image.new("RGB", (width, height), "#eef8ff")
-    draw = ImageDraw.Draw(img)
-    try:
-        title_font = ImageFont.truetype("msjh.ttc", 31)
-        label_font = ImageFont.truetype("msjh.ttc", 19)
-        metric_font = ImageFont.truetype("msjh.ttc", 30)
-        score_font = ImageFont.truetype("msjh.ttc", 70)
-        signal_font = ImageFont.truetype("msjh.ttc", 46)
-        small_font = ImageFont.truetype("msjh.ttc", 15)
-        tiny_font = ImageFont.truetype("msjh.ttc", 13)
-    except Exception:
-        title_font = label_font = metric_font = score_font = signal_font = small_font = tiny_font = ImageFont.load_default()
-
-    latest = payload.get("latest") or {}
-    retail_payload = payload.get("retailIndicator", {})
-    retail_latest = retail_payload.get("latest") or {}
-    retail_error = retail_payload.get("lastError")
-    market_latest = (payload.get("marketIndex") or {}).get("latest") or {}
-    insights = payload.get("insights") or build_market_insights(payload)
-    alerts = insights.get("alerts") or []
-    first_alert = alerts[0] if alerts else {}
-
-    has_retail = bool(retail_latest)
-    score_text = insights.get("scoreFormat", fmt_signal_percent(insights.get("score")))
-    stance = insights.get("stance") or "等待資料"
-    tone = insights.get("tone") or "neutral"
-    if tone == "up":
-        tone_color = "#c84055"
-        tone_bg = "#fff1f3"
-    elif tone == "dn":
-        tone_color = "#16875c"
-        tone_bg = "#edf9f3"
-    else:
-        tone_color = "#475467"
-        tone_bg = "#f2f4f7"
-
-    def badge(x: int, y: int, text: str, fg: str, bg: str) -> None:
-        w = max(92, len(text) * 18 + 28)
-        draw.rounded_rectangle((x, y, x + w, y + 34), radius=8, fill=bg, outline="#d9e0ea")
-        draw.text((x + 14, y + 7), text, fill=fg, font=small_font)
-
-    def metric_color(value: Any, neutral: bool = False) -> str:
-        if neutral:
-            return "#172033"
-        numeric = safe_number(str(value).replace("%", ""))
-        if numeric > 0:
-            return "#c84055"
-        if numeric < 0:
-            return "#16875c"
-        return "#172033"
-
-    def wrap_text(text: str, limit: int) -> list[str]:
-        text = text or "-"
-        return [text[i:i + limit] for i in range(0, len(text), limit)] or ["-"]
-
-    draw.rounded_rectangle((24, 20, width - 24, height - 20), radius=16, fill="#f8fcff", outline="#d8e8f7")
-    date_text = latest.get("dateLabel") or retail_latest.get("dateLabel") or market_latest.get("dateLabel") or "-"
-    draw.text((48, 34), "DCapp Stock 盤後市場快照", fill="#172033", font=title_font)
-    draw.text((48, 76), f"{date_text}｜資料來源 TWSE / TAIFEX", fill="#667085", font=small_font)
-    badge(938, 38, stance, tone_color, tone_bg)
-    badge(1060, 38, f"信心 {insights.get('confidence', '-')}", "#475467", "#f2f4f7")
-
-    hero_y = 112
-    draw.rounded_rectangle((48, hero_y, 328, hero_y + 174), radius=10, fill="#ffffff", outline="#cfe2f4")
-    draw.text((68, hero_y + 20), "市場訊號", fill="#667085", font=small_font)
-    draw.text((68, hero_y + 52), str(score_text), fill=tone_color, font=signal_font)
-    draw.text((68, hero_y + 134), f"{stance}｜信心 {insights.get('confidence', '-')}", fill="#172033", font=label_font)
-
-    summary_x = 348
-    draw.rounded_rectangle((summary_x, hero_y, width - 48, hero_y + 174), radius=10, fill="#ffffff", outline="#cfe2f4")
-    draw.text((summary_x + 18, hero_y + 18), "一眼判讀", fill="#667085", font=small_font)
-    for line_index, line in enumerate(wrap_text(insights.get("summary", "等待資料產生判讀。"), 31)[:2]):
-        draw.text((summary_x + 18, hero_y + 46 + line_index * 31), line, fill="#172033", font=label_font)
-    alert_label = first_alert.get("label", "提醒")
-    alert_text = first_alert.get("text", "目前無極端警示。")
-    alert_level = first_alert.get("level", "low")
-    alert_bg = "#fff1f3" if alert_level == "high" else "#fff6e8" if alert_level == "medium" else "#f2f4f7"
-    alert_fg = "#c84055" if alert_level == "high" else "#ba6f12" if alert_level == "medium" else "#475467"
-    draw.rounded_rectangle((summary_x + 18, hero_y + 112, width - 68, hero_y + 158), radius=8, fill=alert_bg, outline="#ffd0d7" if alert_level == "high" else "#f2d39b" if alert_level == "medium" else "#d9e0ea")
-    draw.text((summary_x + 34, hero_y + 124), f"{alert_label}：{alert_text[:42]}", fill=alert_fg, font=small_font)
-
-    card_y = 306
-    card_h = 104
-    gap = 12
-    card_w = (width - 96 - gap * 3) // 4
-    cards = [
-        ("大盤收盤", market_latest.get("closeFormat", "-"), f"{market_latest.get('changeFormat', '+0.00')} / {market_latest.get('changePercentFormat', '+0.00%')}", True),
-        ("外資合成金額", latest.get("foreignNetAmountFormat", "-"), f"日變化 {latest.get('foreignNetAmountDiffFormat', '+0')}", False),
-        ("小台散戶多空比", retail_latest.get("retailLongShortRatioFormat", "-"), f"前值變化 {retail_latest.get('retailLongShortRatioDiffFormat', '+0.00%')}", False),
-        ("散戶淨留倉", retail_latest.get("retailNetFormat", "-"), f"全體 {retail_latest.get('totalOpenInterestFormat', '-')}", False),
-    ]
-    for index, (label, value, sub, neutral) in enumerate(cards):
-        x = 48 + index * (card_w + gap)
-        draw.rounded_rectangle((x, card_y, x + card_w, card_y + card_h), radius=8, fill="#ffffff", outline="#d9e0ea")
-        draw.text((x + 14, card_y + 12), label, fill="#667085", font=tiny_font)
-        draw.text((x + 14, card_y + 36), str(value), fill=metric_color(value, neutral), font=metric_font)
-        draw.text((x + 14, card_y + 76), str(sub)[:21], fill="#667085", font=tiny_font)
-
-    status_y = 424
-    status_paused = retail_error or not has_retail
-    status_text = f"法人 {latest.get('dateLabel', '-')}；散戶 {retail_latest.get('dateLabel', '-') if has_retail else '-'}；每日 {payload.get('scheduler', {}).get('time', SCHEDULE_TIME)} 排程更新。"
-    if status_paused:
-        status_text = f"小台散戶資料暫停：{retail_error or '等待資料'}"
-    draw.text((52, status_y), status_text[:96], fill="#667085", font=small_font)
-
-    left, right = 90, width - 62
-    top, bottom = 474, height - 64
-    plot_h = bottom - top
-    rows = list(reversed((payload.get("rows") or [])[:LOOKBACK_ROWS]))
-    retail_rows = list(reversed((payload.get("retailIndicator", {}).get("rows") or [])[:LOOKBACK_ROWS]))
-    market_rows = list(reversed((payload.get("marketIndex", {}).get("rows") or [])[:LOOKBACK_ROWS]))
-    dates = [row.get("dateLabel", "") for row in rows]
-    if not dates and retail_rows:
-        dates = [row.get("dateLabel", "") for row in retail_rows]
-    total = max(len(dates), 1)
-
-    def x_at(index: int) -> float:
-        return left + (right - left) * index / max(total - 1, 1)
-
-    draw.text((48, 442), "30 日方向趨勢（標準化比較）", fill="#172033", font=label_font)
-    for i in range(6):
-        y = top + plot_h * i / 5
-        draw.line((left, y, right, y), fill="#edf1f6", width=1)
-    zero_y = top + plot_h / 2
-    draw.line((left, zero_y, right, zero_y), fill="#9aa4b2", width=2)
-
-    foreign_values = [safe_number(row.get("foreignNetAmount")) for row in rows]
-    ratio_values = [safe_number(row.get("retailLongShortRatio")) for row in retail_rows]
-    market_values = [safe_number(row.get("changePercent")) for row in market_rows]
-    foreign_y = scale_points(foreign_values, top + 20, bottom - 20)
-    ratio_y = scale_points(ratio_values, top + 20, bottom - 20)
-    market_y = scale_points(market_values, top + 20, bottom - 20)
-
-    if len(foreign_y) > 1:
-        coords = [(x_at(i), foreign_y[i]) for i in range(len(foreign_y))]
-        draw.line(coords, fill="#3368d8", width=4)
-        draw.ellipse((coords[-1][0] - 5, coords[-1][1] - 5, coords[-1][0] + 5, coords[-1][1] + 5), fill="#3368d8")
-    if len(ratio_y) > 1:
-        coords = [(x_at(i), ratio_y[i]) for i in range(len(ratio_y))]
-        draw.line(coords, fill="#c77818", width=4)
-        draw.ellipse((coords[-1][0] - 5, coords[-1][1] - 5, coords[-1][0] + 5, coords[-1][1] + 5), fill="#c77818")
-    if len(market_y) > 1:
-        coords = [(x_at(i), market_y[i]) for i in range(len(market_y))]
-        draw.line(coords, fill="#16875c", width=3)
-        draw.ellipse((coords[-1][0] - 4, coords[-1][1] - 4, coords[-1][0] + 4, coords[-1][1] + 4), fill="#16875c")
-
-    if dates:
-        step = max(1, len(dates) // 6)
-        for index in range(0, len(dates), step):
-            draw.text((x_at(index) - 24, height - 58), dates[index][5:], fill="#667085", font=small_font)
-
-    legend_x = 642
-    for name, color in [("外資合成金額", "#3368d8"), ("散戶多空比", "#c77818"), ("大盤漲跌", "#16875c")]:
-        draw.rounded_rectangle((legend_x, 447, legend_x + 18, 465), radius=4, fill=color)
-        draw.text((legend_x + 26, 444), name, fill="#344054", font=tiny_font)
-        legend_x += 170
-
-    img.save(path)
-
-
-def draw_chart_png(payload: dict[str, Any], path: Path, identity: str = "foreign") -> None:
-    if Image is None or ImageDraw is None:
-        return
-    identity = identity if identity in IDENTITY_LABELS else "foreign"
-    rows = payload.get("rows", [])
-    latest = payload.get("latest") or {}
-    label = IDENTITY_LABELS[identity]
-    colors = IDENTITY_COLORS[identity]
-
-    width, height = 1200, 675
-    margin_left, margin_right, margin_top, margin_bottom = 96, 56, 96, 92
-    plot_w = width - margin_left - margin_right
-    plot_h = height - margin_top - margin_bottom
-    img = Image.new("RGB", (width, height), "#f5f7fb")
-    draw = ImageDraw.Draw(img)
-
-    try:
-        title_font = ImageFont.truetype("msjh.ttc", 30)
-        label_font = ImageFont.truetype("msjh.ttc", 18)
-        small_font = ImageFont.truetype("msjh.ttc", 15)
-    except Exception:
-        title_font = label_font = small_font = ImageFont.load_default()
-
-    draw.rectangle((0, 0, width, height), fill="#f5f7fb")
-    draw.text((48, 30), f"{PRODUCT_NAME} 三大法人多空未平倉 - {label}", fill="#192231", font=title_font)
-    draw.text(
-        (48, 70),
-        f"{latest.get('dateLabel', '尚無資料')}  淨額 {fmt_signed(latest.get(f'{identity}NetLot', 0))}  "
-        f"日變化 {latest.get(f'{identity}NetLotDiffFormat', '+0')}",
-        fill="#596579",
-        font=label_font,
-    )
-
-    series = [
-        (f"{label}多方", chart_points(rows, f"{identity}BullLot"), colors[0]),
-        (f"{label}空方", chart_points(rows, f"{identity}BearLot"), colors[1]),
-        (f"{label}淨額", chart_points(rows, f"{identity}NetLot"), colors[2]),
-    ]
-    all_values = [value for _, points, _ in series for _, value in points]
-    if not all_values:
-        draw.text((48, 180), "尚未取得資料", fill="#596579", font=label_font)
-        img.save(path)
-        return
-
-    min_value, max_value = min(all_values), max(all_values)
-    if min_value == max_value:
-        min_value -= 1
-        max_value += 1
-    span = max_value - min_value
-    min_value -= span * 0.08
-    max_value += span * 0.08
-
-    def x_at(i: int, total: int) -> float:
-        return margin_left + (plot_w * i / max(total - 1, 1))
-
-    def y_at(value: float) -> float:
-        return margin_top + ((max_value - value) / (max_value - min_value) * plot_h)
-
-    zero_y = y_at(0)
-    if margin_top <= zero_y <= margin_top + plot_h:
-        draw.line((margin_left, zero_y, width - margin_right, zero_y), fill="#9aa4b2", width=2)
-
-    for i in range(6):
-        y = margin_top + plot_h * i / 5
-        value = max_value - (max_value - min_value) * i / 5
-        draw.line((margin_left, y, width - margin_right, y), fill="#dce2ec", width=1)
-        draw.text((24, y - 10), fmt_int(value), fill="#667085", font=small_font)
-
-    labels = series[0][1]
-    if labels:
-        step = max(1, len(labels) // 6)
-        for idx in range(0, len(labels), step):
-            x = x_at(idx, len(labels))
-            draw.text((x - 28, height - 58), labels[idx][0][5:], fill="#667085", font=small_font)
-
-    for name, points, color in series:
-        coords = [(x_at(i, len(points)), y_at(value)) for i, (_, value) in enumerate(points)]
-        if len(coords) > 1:
-            draw.line(coords, fill=color, width=4)
-        for x, y in coords[-1:]:
-            draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=color)
-
-    legend_x = 48
-    for name, _, color in series:
-        draw.rounded_rectangle((legend_x, height - 38, legend_x + 18, height - 20), radius=4, fill=color)
-        draw.text((legend_x + 26, height - 40), name, fill="#344054", font=small_font)
-        legend_x += 170
-
-    img.save(path)
-
-
-def generate_static_files(payload: dict[str, Any]) -> None:
-    ensure_dirs()
-    for identity in IDENTITY_ORDER:
-        draw_chart_png(payload, STATIC_DIR / f"{identity}-chart.png", identity)
-    draw_overview_chart_png(payload, STATIC_DIR / "overview-chart.png")
-    draw_overview_chart_png(payload, STATIC_DIR / "latest-chart.png")
-
-
-def ensure_overview_chart(payload: dict[str, Any]) -> Path:
-    chart_path = STATIC_DIR / "overview-chart.png"
-    if not chart_path.exists():
-        draw_overview_chart_png(payload, chart_path)
-    return chart_path
-
-
-def discord_summary(payload: dict[str, Any], identity: str = "foreign") -> str:
-    latest = payload.get("latest") or {}
-    if not latest:
-        return "尚未取得臺指選擇權三大法人資料。"
-    identity = identity if identity in IDENTITY_LABELS else "foreign"
-    label = IDENTITY_LABELS[identity]
-    market_latest = (payload.get("marketIndex") or {}).get("latest") or {}
-    retail_payload = payload.get("retailIndicator", {})
-    retail_latest = retail_payload.get("latest") or {}
-    retail_error = retail_payload.get("lastError")
-    insights = payload.get("insights") or build_market_insights(payload)
-    alerts = insights.get("alerts") or []
-    alert_line = ""
-    if alerts:
-        alert_line = f"重點提醒：{alerts[0].get('label', '提醒')} - {alerts[0].get('text', '')}\n"
-    market_line = "大盤：尚未取得資料"
-    if market_latest:
-        market_line = (
-            f"大盤收盤：{market_latest.get('closeFormat', '-')} "
-            f"({market_latest.get('changeFormat', '+0.00')}, {market_latest.get('changePercentFormat', '+0.00%')})"
-        )
-    retail_line = f"小台散戶多空比：尚未取得資料{f'（{retail_error}）' if retail_error else ''}"
-    if retail_latest:
-        retail_line = (
-            f"小台散戶多空比：{retail_latest.get('retailLongShortRatioFormat')} "
-            f"({retail_latest.get('retailLongShortRatioDiffFormat', '+0.00%')}, {retail_latest.get('bias', '中性')})"
-        )
-    return (
-        f"**{latest.get('dateLabel')} {PRODUCT_NAME} {label}多空未平倉**\n"
-        f"{market_line}\n"
-        f"多方口數：{latest.get(f'{identity}BullLotFormat', fmt_int(latest.get(f'{identity}BullLot')))} "
-        f"({latest.get(f'{identity}BullLotDiffFormat', '+0')})   "
-        f"空方口數：{latest.get(f'{identity}BearLotFormat', fmt_int(latest.get(f'{identity}BearLot')))} "
-        f"({latest.get(f'{identity}BearLotDiffFormat', '+0')})   "
-        f"淨額：{fmt_signed(latest.get(f'{identity}NetLot'))} "
-        f"({latest.get(f'{identity}NetLotDiffFormat', '+0')})\n"
-        f"{alert_line}"
-        f"{insights.get('summary', '')}\n"
-        f"{retail_line}"
-    )
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(self.path)
 
 
 store = DataStore(DATA_DIR / "latest.json")
-client = TaifexClient()
-market_client = MarketIndexClient()
-retail_client = RetailIndicatorClient()
+option_client = OptionInstitutionalClient()
+market_client = TwseMarketStatsClient()
+spot_client = TwseInstitutionalClient()
+futures_client = FuturesInstitutionalClient()
+retail_mini_client = MiniRetailFuturesClient(futures_client)
+large_trader_client = LargeTraderClient()
+pcr_client = PcRatioClient()
 last_error: str | None = None
 last_scheduler_run: str | None = None
 discord_client: Any = None
@@ -1575,119 +1065,355 @@ discord_client: Any = None
 
 def refresh_data() -> dict[str, Any]:
     global last_error
-    ensure_dirs()
-    previous = store.load()
-    payload = client.fetch_history(LOOKBACK_ROWS)
-    latest_date = parse_taifex_date(payload["tradeDate"].replace("-", "/")) if payload.get("tradeDate") else None
-    try:
-        payload["marketIndex"] = market_client.fetch_history(
-            LOOKBACK_ROWS,
-            latest=latest_date,
-            cached=previous.get("marketIndex"),
-        )
-    except Exception as exc:
-        previous_market = previous.get("marketIndex") or {}
-        if previous_market.get("source") == MARKET_INDEX_SOURCE_LABEL:
-            market_fallback = dict(previous_market)
-        else:
-            market_fallback = empty_market_index()
-            market_fallback["fetchedAt"] = now_taipei().isoformat(timespec="seconds")
-        market_fallback["lastError"] = str(exc)
-        payload["marketIndex"] = market_fallback
-    try:
-        payload["retailIndicator"] = retail_client.fetch_history(
-            LOOKBACK_ROWS,
-            latest=latest_date,
-            cached=previous.get("retailIndicator"),
-        )
-    except Exception as exc:
-        previous_retail = previous.get("retailIndicator") or {}
-        if previous_retail.get("source") == RETAIL_SOURCE_LABEL:
-            retail_fallback = dict(previous_retail)
-        else:
-            retail_fallback = empty_retail_indicator()
-            retail_fallback["fetchedAt"] = now_taipei().isoformat(timespec="seconds")
-        retail_fallback["lastError"] = str(exc)
-        payload["retailIndicator"] = retail_fallback
-    payload = normalize_payload(payload)
+    previous_payload = store.load()
+    previous_by_date = {row.get("date"): row for row in previous_payload.get("rows") or []}
+    option_rows = option_client.fetch_history(LOOKBACK_ROWS)
+    pcr_by_date = pcr_client.fetch_history()
+    rows: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    for option_row in option_rows:
+        day = datetime.strptime(option_row["date"], "%Y-%m-%d").date()
+        previous = previous_by_date.get(option_row["date"])
+        row = {
+            "date": option_row["date"],
+            "dateLabel": option_row["dateLabel"],
+            "missingSources": [],
+            "foreignOptionAmount": option_row.get("foreignOptionAmount", {}),
+            "txoInstitutionalOpenInterest": option_row.get("txoInstitutionalOpenInterest", {}),
+        }
+        fetchers = {
+            "marketIndex": market_client.fetch_day,
+            "spotInstitutional": spot_client.fetch_day,
+            "futuresInstitutional": futures_client.fetch_day,
+            "retailMiniFutures": retail_mini_client.fetch_day,
+            "largeTraderFutures": large_trader_client.fetch_day,
+        }
+        for section, fetcher in fetchers.items():
+            try:
+                value = fetcher(day)
+            except Exception as exc:
+                value = None
+                errors.append(f"{option_row['dateLabel']} {section}: {exc}")
+            merge_row(row, previous, section, value)
+            time.sleep(REQUEST_DELAY)
+        market = row.get("marketIndex") or {}
+        row["cashMarket"] = {
+            "listedVolume": market.get("listedVolume", 0),
+            "listedAmount": market.get("listedAmount", 0),
+            "listedVolumeFormat": market.get("listedVolumeFormat", "-"),
+            "listedAmountFormat": market.get("listedAmountFormat", "-"),
+            "listedAmountYiFormat": market.get("listedAmountYiFormat", "-"),
+        }
+        merge_row(row, previous, "optionPcr", pcr_by_date.get(row["dateLabel"]))
+        rows.append(row)
+
+    rows.sort(key=lambda item: item["date"], reverse=True)
+    with_diffs(rows)
+    for row in rows:
+        row["foreignPositionView"] = build_foreign_position_view(row)
+    payload = empty_payload("\n".join(errors[:8]) if errors else None)
+    payload.update({
+        "rows": rows,
+        "latest": rows[0] if rows else None,
+        "fetchedAt": now_taipei().isoformat(timespec="seconds"),
+    })
     store.save(payload)
     generate_static_files(payload)
-    last_error = None
+    last_error = payload.get("lastError")
     return payload
 
 
-async def send_discord_report(payload: dict[str, Any] | None = None, identity: str = "foreign") -> None:
+def spark_points(rows: list[dict[str, Any]], section: str, key: str) -> list[tuple[str, float]]:
+    ordered = list(reversed(rows[:LOOKBACK_ROWS]))
+    return [(row.get("dateLabel", ""), safe_number((row.get(section) or {}).get(key))) for row in ordered]
+
+
+def nested_number(row: dict[str, Any], path: str) -> float:
+    current: Any = row
+    for part in path.split("."):
+        if not isinstance(current, dict):
+            return 0
+        current = current.get(part)
+    return safe_number(current)
+
+
+def draw_snapshot_chart(payload: dict[str, Any], path: Path) -> None:
+    if Image is None or ImageDraw is None:
+        return
+    latest = payload.get("latest") or {}
+    rows = payload.get("rows") or []
+    width, height = 1200, 675
+    img = Image.new("RGB", (width, height), "#f6f8fb")
+    draw = ImageDraw.Draw(img)
+    try:
+        title_font = ImageFont.truetype("msjh.ttc", 34)
+        metric_font = ImageFont.truetype("msjh.ttc", 30)
+        label_font = ImageFont.truetype("msjh.ttc", 19)
+        small_font = ImageFont.truetype("msjh.ttc", 15)
+    except Exception:
+        title_font = metric_font = label_font = small_font = ImageFont.load_default()
+
+    market = latest.get("marketIndex") or {}
+    cash = latest.get("cashMarket") or {}
+    spot = latest.get("spotInstitutional") or {}
+    futures = (latest.get("futuresInstitutional") or {}).get("foreign") or {}
+    large = latest.get("largeTraderFutures") or {}
+    pcr = latest.get("optionPcr") or {}
+    foreign_opt = latest.get("foreignOptionAmount") or {}
+    foreign_view = latest.get("foreignPositionView") or {}
+    retail = latest.get("retailMiniFutures") or {}
+
+    def color(value: Any) -> str:
+        return "#111827" if safe_number(value) >= 0 else "#d92d20"
+
+    draw.rounded_rectangle((24, 20, width - 24, height - 20), radius=12, fill="#ffffff", outline="#d7dee9")
+    title = f"{latest.get('dateLabel', '-')} 每日籌碼總覽"
+    draw.text((50, 38), title, fill="#111827", font=title_font)
+    index_text = f"大盤 {market.get('taiexCloseFormat', '-')}  {market.get('taiexChangeFormat', '-')} / {market.get('taiexChangePercentFormat', '-')}"
+    draw.text((50, 86), index_text, fill=color(market.get("taiexChange")), font=label_font)
+    view_text = f"外資操作判讀 {foreign_view.get('label', '中性 / 訊號不足')}：{foreign_view.get('summary', '-')}"
+    draw.text((50, 112), view_text[:62], fill=color(foreign_view.get("score")), font=small_font)
+
+    cards = [
+        ("成交金額", cash.get("listedAmountYiFormat", "-"), "上市", 0),
+        ("外資買賣超", spot.get("foreignNetBuyAmountYiFormat", "-"), "上市", spot.get("foreignNetBuyAmount")),
+        ("投信買賣超", spot.get("investmentTrustNetBuyAmountYiFormat", "-"), "上市", spot.get("investmentTrustNetBuyAmount")),
+        ("自營商買賣超", spot.get("dealerNetBuyAmountYiFormat", "-"), "上市", spot.get("dealerNetBuyAmount")),
+        ("外資期貨淨額", futures.get("netFormat", "-"), f"多 {futures.get('longFormat', '-')}/空 {futures.get('shortFormat', '-')}", futures.get("net")),
+        ("前五大交易人", large.get("top5NetFormat", "-"), f"{'多方主導' if large.get('top5Bias') == 'long' else '空方主導' if large.get('top5Bias') == 'short' else '中性'}", large.get("top5Net")),
+        ("前十大交易人", large.get("top10NetFormat", "-"), f"{'多方主導' if large.get('top10Bias') == 'long' else '空方主導' if large.get('top10Bias') == 'short' else '中性'}", large.get("top10Net")),
+        ("選擇權 PCR", pcr.get("openInterestPcrFormat", "-"), f"成交量 {pcr.get('volumePcrFormat', '-')}", pcr.get("openInterestPcr", 0) - 100),
+        ("小台散戶多空比", retail.get("retailLongShortRatioFormat", "-"), f"留倉 {retail.get('retailPositionFormat', '-')}", retail.get("retailLongShortRatio")),
+    ]
+    x0, y0, card_w, card_h, gap = 50, 132, 348, 112, 20
+    for index, (label, value, sub, tone_value) in enumerate(cards):
+        x = x0 + (index % 3) * (card_w + gap)
+        y = y0 + (index // 3) * (card_h + gap)
+        draw.rounded_rectangle((x, y, x + card_w, y + card_h), radius=8, fill="#f9fafb", outline="#e5e7eb")
+        draw.text((x + 16, y + 14), label, fill="#667085", font=small_font)
+        draw.text((x + 16, y + 40), str(value), fill=color(tone_value), font=metric_font)
+        draw.text((x + 16, y + 82), str(sub)[:28], fill="#667085", font=small_font)
+
+    def draw_bar_panel(bounds: tuple[int, int, int, int], title_text: str, data_path: str) -> None:
+        left, top, right, bottom = bounds
+        draw.text((left, top - 24), title_text, fill="#667085", font=small_font)
+        values = [nested_number(row, data_path) for row in reversed(rows[:LOOKBACK_ROWS])]
+        if not values:
+            return
+        max_abs = max(abs(value) for value in values) or 1
+        mid = (top + bottom) // 2
+        draw.line((left, mid, right, mid), fill="#d9dee8", width=1)
+        bar_gap = 2
+        bar_w = max(3, int((right - left) / max(len(values), 1)) - bar_gap)
+        for i, value in enumerate(values):
+            x = left + i * (right - left) / max(len(values), 1)
+            bar_h = abs(value) / max_abs * ((bottom - top) / 2 - 4)
+            y0, y1 = (mid - bar_h, mid) if value >= 0 else (mid, mid + bar_h)
+            draw.rectangle((x, y0, x + bar_w, y1), fill=color(value))
+
+    draw_bar_panel((60, 542, 570, 638), "外資選擇權金額近 30 日", "foreignOptionAmount.netAmount")
+    draw_bar_panel((630, 542, 1140, 638), "外資選擇權淨額近 30 日", "txoInstitutionalOpenInterest.foreign.netLot")
+    img.save(path)
+
+
+def draw_history_detail_chart(payload: dict[str, Any], path: Path, limit: int = 15) -> None:
+    if Image is None or ImageDraw is None:
+        return
+    rows = (payload.get("rows") or [])[:limit]
+    width = 1900
+    row_h = 42
+    top_margin = 92
+    height = top_margin + 48 + max(len(rows), 1) * row_h + 36
+    img = Image.new("RGB", (width, height), "#f6f8fb")
+    draw = ImageDraw.Draw(img)
+    try:
+        title_font = ImageFont.truetype("msjh.ttc", 34)
+        header_font = ImageFont.truetype("msjh.ttc", 18)
+        cell_font = ImageFont.truetype("msjh.ttc", 18)
+        small_font = ImageFont.truetype("msjh.ttc", 15)
+    except Exception:
+        title_font = header_font = cell_font = small_font = ImageFont.load_default()
+
+    def color(value: Any) -> str:
+        number = safe_number(value)
+        if number > 0:
+            return "#111827"
+        if number < 0:
+            return "#d92d20"
+        return "#8a94a6"
+
+    def text_fit(text: Any, limit_chars: int) -> str:
+        value = str(text if text not in {None, ""} else "-")
+        return value if len(value) <= limit_chars else value[: max(limit_chars - 1, 1)] + "…"
+
+    columns = [
+        ("日期", 105, lambda r: (r.get("dateLabel", "-")[5:], None)),
+        ("判讀", 130, lambda r: (compact_view_label((r.get("foreignPositionView") or {}).get("label", "-")), (r.get("foreignPositionView") or {}).get("score"))),
+        ("大盤", 145, lambda r: ((r.get("marketIndex") or {}).get("taiexCloseFormat", "-"), None)),
+        ("漲跌%", 95, lambda r: ((r.get("marketIndex") or {}).get("taiexChangePercentFormat", "-"), (r.get("marketIndex") or {}).get("taiexChangePercent"))),
+        ("外資", 130, lambda r: ((r.get("spotInstitutional") or {}).get("foreignNetBuyAmountYiFormat", "-").replace("億", ""), (r.get("spotInstitutional") or {}).get("foreignNetBuyAmount"))),
+        ("外資期貨", 120, lambda r: (((r.get("futuresInstitutional") or {}).get("foreign") or {}).get("netFormat", "-"), ((r.get("futuresInstitutional") or {}).get("foreign") or {}).get("net"))),
+        ("前五大", 115, lambda r: ((r.get("largeTraderFutures") or {}).get("top5NetFormat", "-"), (r.get("largeTraderFutures") or {}).get("top5Net"))),
+        ("前十大", 115, lambda r: ((r.get("largeTraderFutures") or {}).get("top10NetFormat", "-"), (r.get("largeTraderFutures") or {}).get("top10Net"))),
+        ("PCR", 105, lambda r: ((r.get("optionPcr") or {}).get("openInterestPcrFormat", "-"), None)),
+        ("小台散戶", 130, lambda r: ((r.get("retailMiniFutures") or {}).get("retailLongShortRatioFormat", "-"), (r.get("retailMiniFutures") or {}).get("retailLongShortRatio"))),
+        ("外選金", 125, lambda r: ((r.get("foreignOptionAmount") or {}).get("netAmountFormat", "-"), (r.get("foreignOptionAmount") or {}).get("netAmount"))),
+        ("外選淨", 115, lambda r: ((((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLotFormat", "-")), (((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLot")))),
+    ]
+    total_table_w = sum(width for _, width, _ in columns)
+    left = (width - total_table_w) // 2
+    right = left + total_table_w
+
+    latest = payload.get("latest") or {}
+    draw.rounded_rectangle((24, 20, width - 24, height - 20), radius=12, fill="#ffffff", outline="#d7dee9")
+    draw.text((left, 38), "近 15 日籌碼明細", fill="#111827", font=title_font)
+    draw.text((left, 76), f"最新日期 {latest.get('dateLabel', '-')}｜正值黑色，負值紅色", fill="#667085", font=small_font)
+
+    y = top_margin
+    draw.rectangle((left, y, right, y + 38), fill="#f9fafb", outline="#d9dee8")
+    x = left
+    for header, col_w, _ in columns:
+        draw.text((x + 8, y + 9), header, fill="#667085", font=header_font)
+        x += col_w
+        draw.line((x, y, x, y + 38 + max(len(rows), 1) * row_h), fill="#edf0f5", width=1)
+
+    for row_index, row in enumerate(rows):
+        y = top_margin + 38 + row_index * row_h
+        fill = "#ffffff" if row_index % 2 == 0 else "#fcfcfd"
+        draw.rectangle((left, y, right, y + row_h), fill=fill, outline="#edf0f5")
+        x = left
+        for _, col_w, getter in columns:
+            value, tone = getter(row)
+            fill_color = color(tone) if tone is not None else "#111827"
+            draw.text((x + 8, y + 10), text_fit(value, max(4, col_w // 14)), fill=fill_color, font=cell_font)
+            x += col_w
+
+    if not rows:
+        draw.text((left + 20, top_margin + 62), "尚無資料", fill="#667085", font=cell_font)
+    img.save(path)
+
+
+def generate_static_files(payload: dict[str, Any]) -> None:
+    ensure_dirs()
+    draw_snapshot_chart(payload, STATIC_DIR / "overview-chart.png")
+    draw_snapshot_chart(payload, STATIC_DIR / "latest-chart.png")
+    draw_history_detail_chart(payload, STATIC_DIR / "discord-history-detail.png")
+
+
+def ensure_overview_chart(payload: dict[str, Any]) -> Path:
+    chart_path = STATIC_DIR / "overview-chart.png"
+    if not chart_path.exists():
+        draw_snapshot_chart(payload, chart_path)
+    return chart_path
+
+
+def ensure_discord_history_chart(payload: dict[str, Any]) -> Path:
+    chart_path = STATIC_DIR / "discord-history-detail.png"
+    if not chart_path.exists():
+        draw_history_detail_chart(payload, chart_path)
+    return chart_path
+
+
+def build_discord_message(payload: dict[str, Any], category: str = "overview") -> dict[str, Any]:
+    content = discord_summary(payload, category)
+    chart_path = ensure_discord_history_chart(payload)
+    latest = payload.get("latest") or {}
+    return {
+        "content": content,
+        "chartPath": chart_path,
+        "dateLabel": latest.get("dateLabel"),
+        "fetchedAt": payload.get("fetchedAt"),
+    }
+
+
+def compact_view_label(value: str) -> str:
+    text = value or "-"
+    return text.replace("外資", "").replace(" / 訊號不足", "").replace("偏對沖", "對沖")
+
+
+def discord_summary(payload: dict[str, Any], category: str = "overview") -> str:
+    latest = payload.get("latest") or {}
+    if not latest:
+        return "目前尚無每日籌碼資料，請先更新資料。"
+    foreign_view = latest.get("foreignPositionView") or build_foreign_position_view(latest)
+    explanation_lines = foreign_view.get("explanationLines") or []
+    lines = [
+        f"**{latest.get('dateLabel')} 外資操作判讀**",
+        f"判讀結果：{foreign_view.get('label', '中性 / 訊號不足')}",
+        f"多空強度：{foreign_view.get('confidence', '-')}",
+        f"判讀理由：{foreign_view.get('reason', '-')}",
+    ]
+    if explanation_lines:
+        lines.extend(str(line) for line in explanation_lines if not str(line).startswith("多空強度："))
+    elif foreign_view.get("explanation"):
+        lines.append(str(foreign_view.get("explanation")))
+    return "\n".join(lines)
+
+
+async def send_discord_report(payload: dict[str, Any] | None = None, category: str = "overview") -> None:
     if payload is None:
         payload = store.load()
     if not DISCORD_CHANNEL_IDS:
         raise RuntimeError("DISCORD_CHANNEL_IDS is not configured.")
     if discord_client is None:
         raise RuntimeError("Discord bot is not running.")
-
-    chart_path = ensure_overview_chart(payload)
-
+    message = build_discord_message(payload, category)
+    chart_path = message["chartPath"]
     discord = require_discord()
     for channel_id in DISCORD_CHANNEL_IDS:
-        channel = discord_client.get_channel(channel_id)
-        if channel is None:
-            channel = await discord_client.fetch_channel(channel_id)
+        channel = discord_client.get_channel(channel_id) or await discord_client.fetch_channel(channel_id)
         await channel.send(
-            content=discord_summary(payload, identity),
+            content=message["content"],
             file=discord.File(str(chart_path), filename=chart_path.name) if chart_path.exists() else None,
-            view=InvestorSwitchView(payload),
         )
 
 
-def post_discord_rest_report(payload: dict[str, Any] | None = None, identity: str = "foreign") -> dict[str, Any]:
+def post_discord_rest_report(payload: dict[str, Any] | None = None, category: str = "overview") -> dict[str, Any]:
     if payload is None:
         payload = store.load()
     if not DISCORD_BOT_TOKEN:
         raise RuntimeError("DISCORD_BOT_TOKEN is not configured.")
     if not DISCORD_CHANNEL_IDS:
         raise RuntimeError("DISCORD_CHANNEL_IDS is not configured.")
-
-    identity = identity if identity in IDENTITY_LABELS else "foreign"
-    chart_path = ensure_overview_chart(payload)
-
-    boundary = f"----taifex-discord-{uuid.uuid4().hex}"
+    message = build_discord_message(payload, category)
+    chart_path = message["chartPath"]
+    boundary = f"----chip-dashboard-{uuid.uuid4().hex}"
     body = bytearray()
 
     def add_part(name: str, data: bytes, content_type: str, filename: str | None = None) -> None:
-        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f"--{boundary}\r\n".encode())
         disposition = f'form-data; name="{name}"'
         if filename:
             disposition += f'; filename="{filename}"'
-        body.extend(f"Content-Disposition: {disposition}\r\n".encode("utf-8"))
-        body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
+        body.extend(f"Content-Disposition: {disposition}\r\n".encode())
+        body.extend(f"Content-Type: {content_type}\r\n\r\n".encode())
         body.extend(data)
         body.extend(b"\r\n")
 
-    message = {"content": discord_summary(payload, identity)}
-    add_part("payload_json", json.dumps(message, ensure_ascii=False).encode("utf-8"), "application/json")
+    add_part("payload_json", json.dumps({"content": message["content"]}, ensure_ascii=False).encode("utf-8"), "application/json")
     if chart_path.exists():
         add_part("files[0]", chart_path.read_bytes(), "image/png", chart_path.name)
-    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
-
+    body.extend(f"--{boundary}--\r\n".encode())
     results = []
     for channel_id in DISCORD_CHANNEL_IDS:
         req = urllib.request.Request(
             f"{DISCORD_API_BASE}/channels/{channel_id}/messages",
             data=bytes(body),
-            headers={
-                "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
-                "Content-Type": f"multipart/form-data; boundary={boundary}",
-                "User-Agent": "taifex-discord-datastock/1.0",
-            },
+            headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}", "Content-Type": f"multipart/form-data; boundary={boundary}"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=30) as response:
-            response_body = response.read().decode("utf-8", errors="replace")
-            results.append({
-                "channelId": channel_id,
-                "status": response.status,
-                "body": json.loads(response_body) if response_body else {},
-            })
-    return {"status": results[-1]["status"] if results else 0, "results": results}
+            text = response.read().decode("utf-8", errors="replace")
+            results.append({"channelId": channel_id, "status": response.status, "body": json.loads(text) if text else {}})
+    return {
+        "status": results[-1]["status"] if results else 0,
+        "results": results,
+        "dateLabel": message["dateLabel"],
+        "fetchedAt": message["fetchedAt"],
+        "channelCount": len(DISCORD_CHANNEL_IDS),
+        "contentLength": len(message["content"]),
+    }
 
 
 def scheduler_loop() -> None:
@@ -1714,7 +1440,7 @@ def scheduler_loop() -> None:
 
 
 class AppHandler(BaseHTTPRequestHandler):
-    server_version = "TaifexDataStock/1.0"
+    server_version = "ChipDashboard/2.0"
 
     def log_message(self, format: str, *args: Any) -> None:
         print(f"[{self.log_date_time_string()}] {format % args}")
@@ -1727,8 +1453,8 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_html(self, html_text: str) -> None:
-        body = html_text.encode("utf-8")
+    def send_html(self, text: str) -> None:
+        body = text.encode("utf-8")
         self.send_response(HTTPStatus.OK.value)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1752,32 +1478,21 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/":
             self.send_html(load_index_html())
         elif parsed.path == "/api/data":
-            self.send_json(
-                {
-                    **store.load(),
-                    "scheduler": {
-                        "timezone": TIMEZONE_NAME,
-                        "time": SCHEDULE_TIME,
-                        "lastRun": last_scheduler_run,
-                        "lastError": last_error,
-                        "discordBotConfigured": discord_configured(),
-                        "discordChannelCount": len(DISCORD_CHANNEL_IDS),
-                        "discordBotEnabled": DISCORD_BOT_ENABLED,
-                    },
-                }
-            )
+            self.send_json({
+                **store.load(),
+                "scheduler": {
+                    "timezone": TIMEZONE_NAME,
+                    "time": SCHEDULE_TIME,
+                    "lastRun": last_scheduler_run,
+                    "lastError": last_error,
+                    "discordBotConfigured": discord_configured(),
+                    "discordChannelCount": len(DISCORD_CHANNEL_IDS),
+                    "discordBotEnabled": DISCORD_BOT_ENABLED,
+                },
+            })
         elif parsed.path == "/chart.png":
-            query = urllib.parse.parse_qs(parsed.query)
-            identity = query.get("identity", [None])[0]
-            chart_path = STATIC_DIR / "overview-chart.png"
-            if identity in IDENTITY_LABELS:
-                chart_path = STATIC_DIR / f"{identity}-chart.png"
-            if not chart_path.exists():
-                payload = store.load()
-                if identity in IDENTITY_LABELS:
-                    draw_chart_png(payload, chart_path, identity)
-                else:
-                    draw_overview_chart_png(payload, chart_path)
+            payload = store.load()
+            chart_path = ensure_overview_chart(payload)
             self.send_file(chart_path, "image/png")
         elif parsed.path.startswith("/static/"):
             requested = (STATIC_DIR / parsed.path.removeprefix("/static/")).resolve()
@@ -1793,28 +1508,45 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/refresh":
                 payload = refresh_data()
-                self.send_json({"ok": True, "latest": payload.get("latest"), "fetchedAt": payload.get("fetchedAt")})
+                self.send_json({"ok": True, "latest": payload.get("latest"), "fetchedAt": payload.get("fetchedAt"), "lastError": payload.get("lastError")})
             elif parsed.path == "/api/send-discord":
                 query = urllib.parse.parse_qs(parsed.query)
-                identity = query.get("identity", ["foreign"])[0]
-                if identity not in IDENTITY_LABELS:
-                    identity = "foreign"
+                category = query.get("category", ["overview"])[0]
                 payload = store.load()
                 if not payload.get("latest"):
                     payload = refresh_data()
+                message = build_discord_message(payload, category)
                 if discord_client:
-                    asyncio.run_coroutine_threadsafe(send_discord_report(payload, identity), discord_client.loop)
-                    self.send_json({"ok": True, "mode": "bot"})
+                    asyncio.run_coroutine_threadsafe(send_discord_report(payload, category), discord_client.loop)
+                    self.send_json({
+                        "ok": True,
+                        "mode": "bot",
+                        "dateLabel": message["dateLabel"],
+                        "fetchedAt": message["fetchedAt"],
+                        "channelCount": len(DISCORD_CHANNEL_IDS),
+                        "contentLength": len(message["content"]),
+                    })
                 else:
-                    result = post_discord_rest_report(payload, identity)
-                    self.send_json({"ok": True, "mode": "rest", "discord": {"status": result["status"]}})
+                    result = post_discord_rest_report(payload, category)
+                    self.send_json({
+                        "ok": True,
+                        "mode": "rest",
+                        "dateLabel": result.get("dateLabel"),
+                        "fetchedAt": result.get("fetchedAt"),
+                        "channelCount": result.get("channelCount"),
+                        "contentLength": result.get("contentLength"),
+                        "discord": {"status": result["status"]},
+                    })
             else:
                 self.send_error(HTTPStatus.NOT_FOUND.value)
         except Exception as exc:
             global last_error
             last_error = traceback.format_exc()
-            status = HTTPStatus.BAD_REQUEST if isinstance(exc, RuntimeError) else HTTPStatus.INTERNAL_SERVER_ERROR
-            self.send_json({"ok": False, "error": str(exc), "trace": last_error}, status)
+            self.send_json({"ok": False, "error": str(exc), "trace": last_error}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+
+def discord_configured() -> bool:
+    return bool(DISCORD_BOT_TOKEN and DISCORD_CHANNEL_IDS)
 
 
 def require_discord() -> Any:
@@ -1826,11 +1558,40 @@ def require_discord() -> Any:
     return discord
 
 
+class CategorySwitchView:
+    def __new__(cls, payload: dict[str, Any]) -> Any:
+        discord = require_discord()
+
+        class _View(discord.ui.View):
+            def __init__(self, data: dict[str, Any]) -> None:
+                super().__init__(timeout=300)
+                self.data = data
+
+            async def _send(self, interaction: Any, category: str) -> None:
+                await interaction.response.send_message(discord_summary(self.data, category), ephemeral=True)
+
+            @discord.ui.button(label="總覽", style=discord.ButtonStyle.primary)
+            async def overview_button(self, interaction: Any, button: Any) -> None:
+                await self._send(interaction, "overview")
+
+            @discord.ui.button(label="現貨", style=discord.ButtonStyle.secondary)
+            async def cash_button(self, interaction: Any, button: Any) -> None:
+                await self._send(interaction, "cash")
+
+            @discord.ui.button(label="期貨", style=discord.ButtonStyle.secondary)
+            async def futures_button(self, interaction: Any, button: Any) -> None:
+                await self._send(interaction, "futures")
+
+            @discord.ui.button(label="選擇權", style=discord.ButtonStyle.secondary)
+            async def options_button(self, interaction: Any, button: Any) -> None:
+                await self._send(interaction, "options")
+
+        return _View(payload)
+
+
 def create_discord_bot() -> Any:
     discord = require_discord()
     from discord import app_commands
-    globals()["app_commands"] = app_commands
-
     intents = discord.Intents.default()
     bot = discord.Client(intents=intents)
     tree = app_commands.CommandTree(bot)
@@ -1840,97 +1601,52 @@ def create_discord_bot() -> Any:
         await tree.sync()
         print(f"Discord bot logged in as {bot.user}")
 
-    @tree.command(name="stock_today", description="顯示最新臺指選擇權三大法人摘要")
-    @app_commands.describe(investor="法人別")
-    @app_commands.choices(
-        investor=[
-            app_commands.Choice(name="外資", value="foreign"),
-            app_commands.Choice(name="投信", value="investmentTrust"),
-            app_commands.Choice(name="自營商", value="dealer"),
-        ]
-    )
-    async def stock_today(interaction: Any, investor: app_commands.Choice[str] | None = None) -> None:
-        identity = investor.value if investor else "foreign"
+    @tree.command(name="stock_today", description="傳送每日籌碼總覽")
+    async def stock_today(interaction: Any) -> None:
         payload = store.load()
-        await interaction.response.send_message(discord_summary(payload, identity), view=InvestorSwitchView(payload))
-
-    @tree.command(name="stock_chart", description="傳送最新臺指選擇權三大法人圖表")
-    @app_commands.describe(investor="法人別")
-    @app_commands.choices(
-        investor=[
-            app_commands.Choice(name="外資", value="foreign"),
-            app_commands.Choice(name="投信", value="investmentTrust"),
-            app_commands.Choice(name="自營商", value="dealer"),
-        ]
-    )
-    async def stock_chart(interaction: Any, investor: app_commands.Choice[str] | None = None) -> None:
-        identity = investor.value if investor else "foreign"
-        payload = store.load()
-        chart_path = STATIC_DIR / f"{identity}-chart.png"
-        if not chart_path.exists():
-            draw_chart_png(payload, chart_path, identity)
+        message = build_discord_message(payload)
+        chart_path = message["chartPath"]
         await interaction.response.send_message(
-            content=discord_summary(payload, identity),
+            content=message["content"],
             file=discord.File(str(chart_path), filename=chart_path.name) if chart_path.exists() else None,
-            view=InvestorSwitchView(payload),
         )
 
-    @tree.command(name="stock_refresh", description="重新抓取期交所資料並更新圖表")
+    @tree.command(name="stock_chart", description="傳送每日籌碼快照圖")
+    async def stock_chart(interaction: Any) -> None:
+        payload = store.load()
+        message = build_discord_message(payload)
+        chart_path = message["chartPath"]
+        await interaction.response.send_message(
+            content=message["content"],
+            file=discord.File(str(chart_path), filename=chart_path.name) if chart_path.exists() else None,
+        )
+
+    @tree.command(name="stock_refresh", description="更新每日籌碼資料")
     async def stock_refresh(interaction: Any) -> None:
         await interaction.response.defer(thinking=True)
         try:
             payload = await asyncio.to_thread(refresh_data)
-            await interaction.followup.send(discord_summary(payload), view=InvestorSwitchView(payload))
+            message = build_discord_message(payload)
+            chart_path = message["chartPath"]
+            await interaction.followup.send(
+                content=message["content"],
+                file=discord.File(str(chart_path), filename=chart_path.name) if chart_path.exists() else None,
+            )
         except Exception as exc:
             await interaction.followup.send(f"更新失敗：{exc}")
 
     return bot
 
 
-class InvestorSwitchView:
-    def __new__(cls, payload: dict[str, Any]) -> Any:
-        discord = require_discord()
-
-        class _View(discord.ui.View):
-            def __init__(self, data: dict[str, Any]) -> None:
-                super().__init__(timeout=300)
-                self.data = data
-
-            async def _send_identity(self, interaction: Any, identity: str) -> None:
-                chart_path = STATIC_DIR / f"{identity}-chart.png"
-                if not chart_path.exists():
-                    draw_chart_png(self.data, chart_path, identity)
-                await interaction.response.send_message(
-                    content=discord_summary(self.data, identity),
-                    file=discord.File(str(chart_path), filename=chart_path.name) if chart_path.exists() else None,
-                    ephemeral=True,
-                )
-
-            @discord.ui.button(label="外資", style=discord.ButtonStyle.primary)
-            async def foreign_button(self, interaction: Any, button: Any) -> None:
-                await self._send_identity(interaction, "foreign")
-
-            @discord.ui.button(label="投信", style=discord.ButtonStyle.secondary)
-            async def trust_button(self, interaction: Any, button: Any) -> None:
-                await self._send_identity(interaction, "investmentTrust")
-
-            @discord.ui.button(label="自營商", style=discord.ButtonStyle.secondary)
-            async def dealer_button(self, interaction: Any, button: Any) -> None:
-                await self._send_identity(interaction, "dealer")
-
-        return _View(payload)
-
-
 def load_index_html() -> str:
-    return (BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+    return TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
 def run_web_server() -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), AppHandler)
     print(f"Serving {APP_BASE_URL}")
     print(f"Daily refresh: {SCHEDULE_TIME} {TIMEZONE_NAME}")
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
 
@@ -1947,24 +1663,23 @@ def main() -> None:
     else:
         generate_static_files(store.load())
 
-    threading.Thread(target=scheduler_loop, daemon=True).start()
     run_web_server()
+    threading.Thread(target=scheduler_loop, daemon=True).start()
 
+    global discord_client
     if DISCORD_BOT_ENABLED and DISCORD_BOT_TOKEN:
-        global discord_client
         try:
             discord_client = create_discord_bot()
             discord_client.run(DISCORD_BOT_TOKEN)
         except Exception:
-            last_error = traceback.format_exc()
-            print(last_error)
             print("Discord bot failed to start. Web server will keep running.")
+            print(traceback.format_exc())
             while True:
                 time.sleep(3600)
     else:
         if not DISCORD_BOT_ENABLED:
             print("Discord bot disabled: DISCORD_BOT_ENABLED=0.")
-        else:
+        elif not DISCORD_BOT_TOKEN:
             print("Discord bot disabled: DISCORD_BOT_TOKEN is not configured.")
         while True:
             time.sleep(3600)
