@@ -1,31 +1,5 @@
 # DCapp Stock
 
-開發與建置：
-
-```text
-cd frontend
-pnpm install
-pnpm run build
-```
-
-如果你的電腦使用 npm，也可以用：
-
-```text
-cd frontend
-npm install
-npm run build
-```
-
-建置完成後回到專案根目錄執行 Python app，首頁就會讀取 `frontend/dist/index.html`：
-
-```text
-.venv\Scripts\python.exe app.py
-```
-
-若尚未建置前端，Python 首頁會顯示「Neuralyn frontend 尚未建置」提示。既有股票資料 API、Discord bot、資料刷新流程仍保留。
-
-每日籌碼總覽 Dashboard 與 Discord Bot。專案會抓取 TWSE / TAIFEX 官方資料，整理成網頁 Dashboard、快取 JSON、Discord 文字摘要與圖片。
-
 ## 快速啟動
 
 在 Windows 直接執行：
@@ -63,6 +37,34 @@ http://127.0.0.1:8080
 - TAIFEX 大額交易人：臺股期貨組合前五大、前十大交易人留倉。
 - TAIFEX Put/Call Ratio：選擇權 PCR。網頁、表格與 Discord 圖片主顯示為未平倉 PCR，成交量 PCR 只作輔助資訊。
 - TAIFEX 選擇權買賣權分計：外資選擇權金額、台指選擇權法人多空未平倉。
+
+開發與建置：
+
+```text
+cd frontend
+pnpm install
+pnpm run build
+```
+
+如果你的電腦使用 npm，也可以用：
+
+```text
+cd frontend
+npm install
+npm run build
+```
+
+建置完成後回到專案根目錄執行 Python app，首頁就會讀取 `frontend/dist/index.html`：
+
+```text
+.venv\Scripts\python.exe app.py
+```
+
+若尚未建置前端，Python 首頁會顯示「Neuralyn frontend 尚未建置」提示。既有股票資料 API、Discord bot、資料刷新流程仍保留。
+
+每日籌碼總覽 Dashboard 與 Discord Bot。專案會抓取 TWSE / TAIFEX 官方資料，整理成網頁 Dashboard、快取 JSON、Discord 文字摘要與圖片。
+
+
 
 ## 重要公式
 
