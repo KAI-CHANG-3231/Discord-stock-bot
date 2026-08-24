@@ -1,42 +1,17 @@
 # DCapp Stock
 
-## 快速啟動
+## Neuralyn Landing Page
 
-在 Windows 直接執行：
+本專案現在的根路徑 `/` 會優先顯示 `frontend/dist` 內的 Neuralyn landing page。這個前端使用 React、Vite、TypeScript、Tailwind CSS、Framer Motion、shadcn/ui 基礎 Button、`@fontsource/inter` 與 `@fontsource/instrument-serif`。
 
-```text
-DCapp_stock_open.bat
-```
-
-啟動後開啟：
+主要檔案：
 
 ```text
-http://127.0.0.1:8080
+frontend/src/App.tsx
+frontend/src/index.css
+frontend/src/components/ui/button.tsx
+frontend/public/assets/
 ```
-
-保持命令視窗開啟即可使用；要停止服務請按 `Ctrl+C`。
-
-## 主要功能
-
-- 頁首顯示日期、大盤指數、漲跌點數、漲跌百分比、資料更新時間。
-- 現貨區顯示上市成交金額、外資 / 投信 / 自營買賣超，單位為億元。
-- 期貨區顯示臺股期貨法人未平倉多單、空單、淨額。
-- 大額交易人區顯示臺股期貨組合 `TX+MTX/4+TMF/20` 所有契約前五大、前十大淨值。
-- 選擇權區顯示未平倉 PCR、小台指散戶多空比、外資選擇權金額、台指選擇權法人多空未平倉。
-- 外資選擇權金額與外資選擇權淨額提供近 30 日長條圖。
-- 外資操作判讀整合外資現貨、前五 / 前十大淨值、PCR、外資選擇權金額，標示外資偏多、偏空、偏對沖或中性。
-- 網頁下方保留近 30 個交易日明細。
-- Discord 文字只顯示外資操作判讀，圖片顯示近 15 日明細表。
-
-## 資料來源
-
-- TWSE MI_INDEX：大盤指數、漲跌點數、漲跌百分比、上市成交金額。
-- TWSE BFI82U：外資、投信、自營商上市買賣超金額。
-- TAIFEX 期貨三大法人：臺股期貨與小台指法人多空未平倉。
-- TAIFEX 期貨每日交易行情：小台全體未平倉量。
-- TAIFEX 大額交易人：臺股期貨組合前五大、前十大交易人留倉。
-- TAIFEX Put/Call Ratio：選擇權 PCR。網頁、表格與 Discord 圖片主顯示為未平倉 PCR，成交量 PCR 只作輔助資訊。
-- TAIFEX 選擇權買賣權分計：外資選擇權金額、台指選擇權法人多空未平倉。
 
 開發與建置：
 
@@ -64,7 +39,43 @@ npm run build
 
 每日籌碼總覽 Dashboard 與 Discord Bot。專案會抓取 TWSE / TAIFEX 官方資料，整理成網頁 Dashboard、快取 JSON、Discord 文字摘要與圖片。
 
+## 快速啟動
 
+在 Windows 直接執行：
+
+```text
+DCapp_stock_open.bat
+```
+
+啟動後開啟：
+
+```text
+http://127.0.0.1:8080
+```
+
+保持命令視窗開啟即可使用；要停止服務請按 `Ctrl+C`。
+
+## 主要功能
+
+- 頁首顯示日期、大盤指數、漲跌點數、漲跌百分比、資料更新時間。
+- 現貨區顯示上市成交金額、外資 / 投信 / 自營買賣超，單位為億元。
+- 期貨區顯示臺股期貨法人未平倉多單、空單、淨額。
+- 大額交易人區顯示臺股期貨組合 `TX+MTX/4+TMF/20` 所有契約前五大、前十大淨值。
+- 選擇權區顯示未平倉 PCR、小台指散戶多空比、外資與自營商選擇權金額，以及台指選擇權法人多空未平倉。
+- 外資與自營商的選擇權金額、選擇權淨額均提供近 30 日合成部位圖。
+- 外資操作判讀整合外資現貨、前五 / 前十大淨值、PCR、外資選擇權金額與口數，標示外資偏多、偏空、偏對沖或中性。
+- 網頁下方保留近 30 個交易日明細。
+- Discord 文字顯示外資操作判讀與自營商選擇權判讀，圖片顯示近 15 日明細表。
+
+## 資料來源
+
+- TWSE MI_INDEX：大盤指數、漲跌點數、漲跌百分比、上市成交金額。
+- TWSE BFI82U：外資、投信、自營商上市買賣超金額。
+- TAIFEX 期貨三大法人：臺股期貨與小台指法人多空未平倉。
+- TAIFEX 期貨每日交易行情：小台全體未平倉量。
+- TAIFEX 大額交易人：臺股期貨組合前五大、前十大交易人留倉。
+- TAIFEX Put/Call Ratio：選擇權 PCR。網頁、表格與 Discord 圖片主顯示為未平倉 PCR，成交量 PCR 只作輔助資訊。
+- TAIFEX 選擇權買賣權分計：外資選擇權金額、台指選擇權法人多空未平倉。
 
 ## 重要公式
 
@@ -81,17 +92,22 @@ npm run build
 = -1 * 小台指三大法人未平倉淨額 / 小台全體未平倉量
 ```
 
-外資選擇權金額：
+外資選擇權方向（依 TAIFEX 多空定義）：
 
 ```text
-外資選擇權多方金額 - 外資選擇權空方金額
+偏多部位 = Buy Call（看大漲）+ Sell Put（看不跌）
+偏空部位 = Buy Put（看大跌）+ Sell Call（看不漲）
+金額淨額 = 偏多金額 - 偏空金額
+口數淨額 = 偏多口數 - 偏空口數
 ```
+
+金額與口數分別以 `(偏多 - 偏空) / (偏多 + 偏空)` 正規化：絕對值未達 5% 為中性、5% 至 15% 為偏多 / 偏空、15% 以上為強偏多 / 強偏空。兩者反向時標示為分歧，不直接當成單一方向。法人資料是同類法人合計互抵結果，不代表單一機構的完整策略。
 
 ## 顏色規則
 
-- 正值、買超、多方：黑色。
+- 正值、買超、多方：深藍色。
 - 負值、賣超、空方：紅色。
-- 零值或缺資料：灰色。
+- 中性、對沖、零值或缺資料：灰色。判讀欄以最終判讀上色，不再以尚未確認的多空計數替中性上色。
 
 ## Discord 設定
 
@@ -114,11 +130,12 @@ discord_config.example.json
   "DISCORD_BOT_TOKEN": "your bot token",
   "DISCORD_CHANNEL_IDS": ["123456789012345678"],
   "DISCORD_SEND_AFTER_REFRESH": "1",
-  "DISCORD_BOT_ENABLED": "1"
+  "DISCORD_BOT_ENABLED": "1",
+  "SCHEDULE_TIME": "16:20"
 }
 ```
 
-支援多個頻道 ID；網頁「傳送 Discord」按鈕會把相同文字與相同圖片送到所有頻道。
+支援多個頻道 ID；自動排程只在星期一至星期五執行，星期六、日不更新也不自動傳送 Discord。網頁「傳送 Discord」按鈕屬於手動操作，仍會把相同文字與相同圖片送到所有頻道。
 
 ## Discord 指令
 
@@ -201,7 +218,9 @@ github_upload/
 - `largeTraderFutures`：臺股期貨組合前五大、前十大交易人淨值。
 - `optionPcr`：成交量 PCR、未平倉 PCR；主顯示欄位使用未平倉 PCR。
 - `foreignOptionAmount`：外資選擇權多方金額、空方金額、淨額。
+- `optionInstitutionalAmount`：外資、投信、自營商選擇權多方金額、空方金額、淨額與四式部位。
 - `txoInstitutionalOpenInterest`：台指選擇權法人多空未平倉。
+- `optionPositionViews`：外資、投信、自營商各自依金額與口數合併後的選擇權判讀。
 - `foreignPositionView`：外資操作判讀、分數、理由與各子項訊號。
 
 ## 常用開發指令
