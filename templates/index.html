@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>每日籌碼總覽</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f9;
+      --panel: #ffffff;
+      --panel-soft: #f9fafb;
+      --line: #d9dee8;
+      --text: #111827;
+      --muted: #667085;
+      --negative: #d92d20;
+      --neutral: #8a94a6;
+      --accent: #2563eb;
+      --shadow: 0 8px 24px rgba(16, 24, 40, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button, select { font: inherit; }
+    .shell { width: min(1480px, calc(100% - 32px)); margin: 0 auto; padding: 20px 0 36px; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    h1 { margin: 0; font-size: 26px; line-height: 1.2; }
+    .subtle { color: var(--muted); font-size: 13px; }
+    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 8px;
+      min-height: 38px;
+      padding: 0 14px;
+      cursor: pointer;
+    }
+    button.primary { background: #111827; color: #fff; border-color: #111827; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) repeat(4, minmax(150px, 220px));
+      gap: 10px;
+      align-items: stretch;
+      margin-bottom: 14px;
+    }
+    .hero-cell, .panel, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .hero-cell {
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 96px;
+    }
+    .hero-cell .label, .card .label { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .hero-cell .value { font-size: 27px; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+    .hero-cell .meta { margin-top: 7px; color: var(--muted); font-size: 13px; }
+    .positive { color: #111827; }
+    .negative { color: var(--negative); }
+    .neutral { color: var(--neutral); }
+    .notice {
+      min-height: 36px;
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .section {
+      margin-top: 16px;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin: 0 0 8px;
+    }
+    .section-head h2 { font-size: 18px; margin: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .section-wide .grid { grid-template-columns: 1fr; }
+    .card {
+      border-radius: 8px;
+      min-height: 166px;
+      padding: 13px;
+      display: grid;
+      grid-template-rows: auto auto auto auto 44px;
+      gap: 6px;
+    }
+    .card .value {
+      font-size: 25px;
+      font-weight: 800;
+      line-height: 1.12;
+      overflow-wrap: anywhere;
+    }
+    .card .meta { color: var(--muted); font-size: 12px; min-height: 18px; overflow-wrap: anywhere; }
+    .card .note { color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+    canvas.spark { width: 100%; height: 44px; display: block; }
+    .bar-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .bar-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 13px;
+    }
+    .bar-panel .label { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    canvas.bar-chart { width: 100%; height: 150px; display: block; }
+    .panel {
+      border-radius: 8px;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+    details summary {
+      padding: 12px 14px;
+      cursor: pointer;
+      color: var(--text);
+      background: var(--panel-soft);
+      border-bottom: 1px solid var(--line);
+    }
+    .table-wrap { overflow: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 1100px; font-size: 13px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #edf0f5; text-align: right; white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
+    th { color: var(--muted); font-weight: 700; background: #f9fafb; }
+    .empty { padding: 22px; color: var(--muted); text-align: center; }
+    @media (max-width: 1120px) {
+      .hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .bar-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 680px) {
+      .shell { width: min(100% - 20px, 1480px); padding-top: 12px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .hero, .grid { grid-template-columns: 1fr; }
+      .hero-cell .value, .card .value { font-size: 22px; }
+      .actions { width: 100%; }
+      .actions button { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="topbar">
+      <div>
+        <h1>每日籌碼總覽</h1>
+        <div class="subtle">TWSE / TAIFEX | 現貨、期貨、大額交易人、選擇權</div>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" class="primary">更新資料</button>
+        <button id="discordBtn">傳送 Discord</button>
+      </div>
+    </div>
+
+    <section id="hero" class="hero"></section>
+    <div id="notice" class="notice">正在載入資料。</div>
+    <div id="sections"></div>
+    <details class="panel" open>
+      <summary>近 30 日明細</summary>
+      <div id="historyTable" class="table-wrap"></div>
+    </details>
+  </main>
+
+  <script>
+    let payload = null;
+
+    const identityLabels = { foreign: '外資', investmentTrust: '投信', dealer: '自營商' };
+    const get = (obj, path, fallback = null) => path.split('.').reduce((acc, key) => acc && acc[key] !== undefined ? acc[key] : null, obj) ?? fallback;
+    const num = value => Number(value || 0);
+    const cls = value => num(value) > 0 ? 'positive' : num(value) < 0 ? 'negative' : 'neutral';
+    const text = (value, fallback = '-') => value === undefined || value === null || value === '' ? fallback : value;
+
+    function setNotice(message, tone = 'neutral') {
+      const node = document.getElementById('notice');
+      node.textContent = message;
+      node.className = `notice ${tone}`;
+    }
+
+    function latest() {
+      return payload?.latest || {};
+    }
+
+    function rows() {
+      return payload?.rows || [];
+    }
+
+    function metric(label, value, meta, path, toneValue = null, note = '') {
+      return { label, value: text(value), meta: text(meta, ''), path, toneValue, note: text(note, '') };
+    }
+
+    function barChart(label, path) {
+      return { label, path };
+    }
+
+    function buildHero(row) {
+      const market = row.marketIndex || {};
+      const cash = row.cashMarket || {};
+      const cells = [
+        ['日期', row.dateLabel || '-', payload?.fetchedAt ? `更新 ${payload.fetchedAt}` : '等待更新', null],
+        ['大盤指數', market.taiexCloseFormat || '-', '發行量加權股價指數', market.taiexChange],
+        ['漲跌點數', market.taiexChangeFormat || '-', '日漲跌', market.taiexChange],
+        ['漲跌百分比', market.taiexChangePercentFormat || '-', '日漲跌幅', market.taiexChangePercent],
+        ['成交金額', cash.listedAmountYiFormat || '-', `原始 ${cash.listedAmountFormat || '-'} 元`, 0],
+      ];
+      document.getElementById('hero').innerHTML = cells.map(([label, value, meta, tone]) => `
+        <div class="hero-cell">
+          <div class="label">${label}</div>
+          <div class="value ${tone === null ? '' : cls(tone)}">${value}</div>
+          <div class="meta">${meta}</div>
+        </div>
+      `).join('');
+    }
+
+    function buildCards(row) {
+      const cash = row.cashMarket || {};
+      const spot = row.spotInstitutional || {};
+      const futures = row.futuresInstitutional || {};
+      const large = row.largeTraderFutures || {};
+      const pcr = row.optionPcr || {};
+      const foreignOpt = row.foreignOptionAmount || {};
+      const txo = row.txoInstitutionalOpenInterest || {};
+      const foreignView = row.foreignPositionView || {};
+      const retail = row.retailMiniFutures || {};
+      return [
+        {
+          title: '外資操作判讀',
+          wide: true,
+          subtitle: '整合外資現貨、大額交易人、PCR 與外資選擇權金額，判斷偏多、偏空或對沖。',
+          cards: [
+            metric('外資操作判讀', foreignView.label || '中性 / 訊號不足', foreignView.reason || foreignView.summary || '-', 'foreignPositionView.score', foreignView.score, foreignView.explanation || ''),
+          ]
+        },
+        {
+          title: '現貨',
+          subtitle: '上市成交金額與三大法人買賣超，單位：億元',
+          cards: [
+            metric('成交金額', cash.listedAmountYiFormat, cash.listedAmountDiffFormat ? `較前日 ${cash.listedAmountDiffFormat}` : '上市', 'cashMarket.listedAmount', 0),
+            metric('外資買賣超', spot.foreignNetBuyAmountYiFormat, spot.foreignNetBuyAmountDiffFormat ? `較前日 ${spot.foreignNetBuyAmountDiffFormat}` : '上市', 'spotInstitutional.foreignNetBuyAmount', spot.foreignNetBuyAmount),
+            metric('投信買賣超', spot.investmentTrustNetBuyAmountYiFormat, spot.investmentTrustNetBuyAmountDiffFormat ? `較前日 ${spot.investmentTrustNetBuyAmountDiffFormat}` : '上市', 'spotInstitutional.investmentTrustNetBuyAmount', spot.investmentTrustNetBuyAmount),
+            metric('自營商買賣超', spot.dealerNetBuyAmountYiFormat, spot.dealerNetBuyAmountDiffFormat ? `較前日 ${spot.dealerNetBuyAmountDiffFormat}` : '上市', 'spotInstitutional.dealerNetBuyAmount', spot.dealerNetBuyAmount),
+          ]
+        },
+        {
+          title: '期貨',
+          subtitle: '臺股期貨法人未平倉',
+          cards: ['foreign', 'investmentTrust', 'dealer'].map(id => {
+            const item = futures[id] || {};
+            return metric(`${identityLabels[id]}期貨淨額`, item.netFormat, `多 ${item.longFormat || '-'} / 空 ${item.shortFormat || '-'}`, `futuresInstitutional.${id}.net`, item.net);
+          })
+        },
+        {
+          title: '大額交易人',
+          subtitle: '臺股期貨組合 TX+MTX/4+TMF/20，所有契約，買方減賣方',
+          cards: [
+            metric('前五大交易人', large.top5NetFormat, `${large.top5Bias === 'long' ? '多方主導' : large.top5Bias === 'short' ? '空方主導' : '中性'}｜多 ${large.top5LongFormat || '-'} (${large.top5LongPercentFormat || '-'}) / 空 ${large.top5ShortFormat || '-'} (${large.top5ShortPercentFormat || '-'})`, 'largeTraderFutures.top5Net', large.top5Net),
+            metric('前十大交易人', large.top10NetFormat, `${large.top10Bias === 'long' ? '多方主導' : large.top10Bias === 'short' ? '空方主導' : '中性'}｜多 ${large.top10LongFormat || '-'} (${large.top10LongPercentFormat || '-'}) / 空 ${large.top10ShortFormat || '-'} (${large.top10ShortPercentFormat || '-'})`, 'largeTraderFutures.top10Net', large.top10Net),
+          ]
+        },
+        {
+          title: '選擇權',
+          subtitle: 'PCR、外資選擇權金額、台指選擇權法人多空未平倉',
+          cards: [
+            metric('未平倉 PCR', pcr.openInterestPcrFormat, `成交量 PCR ${pcr.volumePcrFormat || '-'}`, 'optionPcr.openInterestPcr', num(pcr.openInterestPcr) - 100),
+            metric('小台指散戶多空比', retail.retailLongShortRatioFormat, `散戶留倉 ${retail.retailPositionFormat || '-'} / 全體未平倉 ${retail.totalOpenInterestFormat || '-'}`, 'retailMiniFutures.retailLongShortRatio', retail.retailLongShortRatio),
+            metric('外資選擇權金額', foreignOpt.netAmountFormat, `多 ${foreignOpt.bullAmountFormat || '-'} / 空 ${foreignOpt.bearAmountFormat || '-'}`, 'foreignOptionAmount.netAmount', foreignOpt.netAmount),
+            ...['foreign', 'investmentTrust'].map(id => {
+              const item = (txo[id] || {});
+              return metric(`${identityLabels[id]}選擇權淨額`, item.netLotFormat, `多 ${item.bullLotFormat || '-'} / 空 ${item.bearLotFormat || '-'}`, `txoInstitutionalOpenInterest.${id}.netLot`, item.netLot);
+            })
+          ],
+          charts: [
+            barChart('外資選擇權金額近 30 日', 'foreignOptionAmount.netAmount'),
+            barChart('外資選擇權淨額近 30 日', 'txoInstitutionalOpenInterest.foreign.netLot'),
+          ]
+        }
+      ];
+    }
+
+    function drawSpark(canvas, path, toneValue) {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth || 220;
+      const h = canvas.clientHeight || 44;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+      const vals = rows().slice().reverse().map(row => num(get(row, path, 0)));
+      if (vals.length < 2) return;
+      let min = Math.min(...vals), max = Math.max(...vals);
+      if (min === max) { min -= 1; max += 1; }
+      ctx.strokeStyle = num(toneValue) < 0 ? '#d92d20' : '#111827';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      vals.forEach((value, i) => {
+        const x = vals.length === 1 ? 0 : i * (w - 4) / (vals.length - 1) + 2;
+        const y = h - 4 - ((value - min) / (max - min)) * (h - 8);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    function drawBarChart(canvas, path) {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth || 420;
+      const h = canvas.clientHeight || 150;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+      const vals = rows().slice().reverse().map(row => num(get(row, path, 0)));
+      if (!vals.length) return;
+      const maxAbs = Math.max(...vals.map(value => Math.abs(value)), 1);
+      const mid = h / 2;
+      ctx.strokeStyle = '#d9dee8';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, mid);
+      ctx.lineTo(w, mid);
+      ctx.stroke();
+      const gap = 2;
+      const barW = Math.max(3, w / vals.length - gap);
+      vals.forEach((value, i) => {
+        const x = i * (w / vals.length) + gap / 2;
+        const barH = Math.abs(value) / maxAbs * (h / 2 - 8);
+        const y = value >= 0 ? mid - barH : mid;
+        ctx.fillStyle = value > 0 ? '#111827' : value < 0 ? '#d92d20' : '#8a94a6';
+        ctx.fillRect(x, y, barW, Math.max(1, barH));
+      });
+    }
+
+    function renderSections(row) {
+      const data = buildCards(row);
+      document.getElementById('sections').innerHTML = data.map((section, sIndex) => `
+        <section class="section ${section.wide ? 'section-wide' : ''}">
+          <div class="section-head">
+            <h2>${section.title}</h2>
+            <div class="subtle">${section.subtitle}</div>
+          </div>
+          <div class="grid">
+            ${section.cards.map((card, cIndex) => `
+              <div class="card">
+                <div class="label">${card.label}</div>
+                <div class="value ${cls(card.toneValue)}">${card.value}</div>
+                <div class="meta">${card.meta}</div>
+                <div class="note">${card.note}</div>
+                <canvas class="spark" data-path="${card.path}" data-tone="${card.toneValue ?? 0}" id="spark-${sIndex}-${cIndex}"></canvas>
+              </div>
+            `).join('')}
+          </div>
+          ${section.charts?.length ? `
+            <div class="bar-grid">
+              ${section.charts.map((chart, chartIndex) => `
+                <div class="bar-panel">
+                  <div class="label">${chart.label}</div>
+                  <canvas class="bar-chart" data-path="${chart.path}" id="bar-${sIndex}-${chartIndex}"></canvas>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </section>
+      `).join('');
+      document.querySelectorAll('canvas.spark').forEach(canvas => drawSpark(canvas, canvas.dataset.path, canvas.dataset.tone));
+      document.querySelectorAll('canvas.bar-chart').forEach(canvas => drawBarChart(canvas, canvas.dataset.path));
+    }
+
+    function renderHistory() {
+      const table = document.getElementById('historyTable');
+      if (!rows().length) {
+        table.innerHTML = '<div class="empty">尚無資料</div>';
+        return;
+      }
+      table.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th><th>外資操作判讀</th><th>大盤</th><th>漲跌</th><th>漲跌%</th><th>成交金額</th>
+              <th>外資買賣超</th><th>投信買賣超</th><th>自營買賣超</th>
+              <th>外資期貨淨額</th><th>前五大淨值</th><th>前十大淨值</th>
+              <th>PCR</th><th>小台指散戶多空比</th><th>外資選擇權金額</th><th>外資選擇權淨額</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows().map(row => {
+              const m = row.marketIndex || {}, cash = row.cashMarket || {}, spot = row.spotInstitutional || {};
+              const fut = (row.futuresInstitutional || {}).foreign || {}, large = row.largeTraderFutures || {};
+              const pcr = row.optionPcr || {}, retail = row.retailMiniFutures || {}, opt = row.foreignOptionAmount || {}, txo = (row.txoInstitutionalOpenInterest || {}).foreign || {};
+              const foreignView = row.foreignPositionView || {};
+              return `
+                <tr>
+                  <td>${row.dateLabel || '-'}</td>
+                  <td class="${cls(foreignView.score)}">${foreignView.label || '-'}</td>
+                  <td>${m.taiexCloseFormat || '-'}</td>
+                  <td class="${cls(m.taiexChange)}">${m.taiexChangeFormat || '-'}</td>
+                  <td class="${cls(m.taiexChangePercent)}">${m.taiexChangePercentFormat || '-'}</td>
+                  <td>${cash.listedAmountYiFormat || '-'}</td>
+                  <td class="${cls(spot.foreignNetBuyAmount)}">${spot.foreignNetBuyAmountYiFormat || '-'}</td>
+                  <td class="${cls(spot.investmentTrustNetBuyAmount)}">${spot.investmentTrustNetBuyAmountYiFormat || '-'}</td>
+                  <td class="${cls(spot.dealerNetBuyAmount)}">${spot.dealerNetBuyAmountYiFormat || '-'}</td>
+                  <td class="${cls(fut.net)}">${fut.netFormat || '-'}</td>
+                  <td class="${cls(large.top5Net)}">${large.top5NetFormat || '-'}</td>
+                  <td class="${cls(large.top10Net)}">${large.top10NetFormat || '-'}</td>
+                  <td>${pcr.openInterestPcrFormat || '-'}</td>
+                  <td class="${cls(retail.retailLongShortRatio)}">${retail.retailLongShortRatioFormat || '-'}</td>
+                  <td class="${cls(opt.netAmount)}">${opt.netAmountFormat || '-'}</td>
+                  <td class="${cls(txo.netLot)}">${txo.netLotFormat || '-'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function render() {
+      const row = latest();
+      buildHero(row);
+      renderSections(row);
+      renderHistory();
+      const missing = row.missingSources?.length ? `；部分來源使用快取/缺值：${row.missingSources.join(', ')}` : '';
+      setNotice(`資料日期 ${row.dateLabel || '-'}，近 ${rows().length} 筆交易日${missing}`);
+    }
+
+    async function loadData() {
+      const res = await fetch('/api/data');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      payload = await res.json();
+      render();
+    }
+
+    async function refreshData() {
+      const btn = document.getElementById('refreshBtn');
+      btn.disabled = true;
+      setNotice('正在更新 TWSE / TAIFEX 資料，這可能需要一點時間。');
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        await loadData();
+        setNotice(`更新完成：${payload?.latest?.dateLabel || '-'}`, 'positive');
+      } catch (err) {
+        setNotice(`更新失敗：${err.message}`, 'negative');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function sendDiscord() {
+      const btn = document.getElementById('discordBtn');
+      btn.disabled = true;
+      setNotice('正在傳送 Discord 摘要與快照圖。');
+      try {
+        const res = await fetch('/api/send-discord', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        setNotice('Discord 已送出。', 'positive');
+      } catch (err) {
+        setNotice(`Discord 傳送失敗：${err.message}`, 'negative');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', refreshData);
+    document.getElementById('discordBtn').addEventListener('click', sendDiscord);
+    window.addEventListener('resize', () => {
+      document.querySelectorAll('canvas.spark').forEach(canvas => drawSpark(canvas, canvas.dataset.path, canvas.dataset.tone));
+      document.querySelectorAll('canvas.bar-chart').forEach(canvas => drawBarChart(canvas, canvas.dataset.path));
+    });
+    loadData().catch(err => setNotice(`載入失敗：${err.message}`, 'negative'));
+  </script>
+</body>
+</html>
