@@ -34,6 +34,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATE_PATH = BASE_DIR / "templates" / "index.html"
+FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
+FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
 
 TAIFEX_CALLS_PUTS_URL = "https://www.taifex.com.tw/cht/3/callsAndPutsDate"
 TAIFEX_FUT_CONTRACTS_URL = "https://www.taifex.com.tw/cht/3/futContractsDate"
@@ -61,6 +63,8 @@ TIMEZONE_NAME = os.getenv("TIMEZONE", "Asia/Taipei")
 SCHEDULE_TIME = os.getenv("SCHEDULE_TIME", "16:20")
 RUN_ON_STARTUP = os.getenv("RUN_ON_STARTUP", "1") == "1"
 DISCORD_API_BASE = "https://discord.com/api/v10"
+OPTION_IMBALANCE_THRESHOLD = float(os.getenv("OPTION_IMBALANCE_THRESHOLD", "0.05"))
+OPTION_STRONG_IMBALANCE_THRESHOLD = float(os.getenv("OPTION_STRONG_IMBALANCE_THRESHOLD", "0.15"))
 
 
 def load_dotenv(path: Path) -> None:
@@ -146,6 +150,20 @@ def now_taipei() -> datetime:
 def parse_schedule_time(value: str) -> clock_time:
     hour, minute = value.split(":", 1)
     return clock_time(int(hour), int(minute))
+
+
+def is_weekday(moment: datetime) -> bool:
+    """Return True from Monday through Friday in the supplied timezone."""
+    return moment.weekday() < 5
+
+
+def should_run_daily_schedule(moment: datetime, scheduled_at: clock_time, last_run: str | None) -> bool:
+    """Run once after the configured time, excluding Saturday and Sunday."""
+    return (
+        is_weekday(moment)
+        and moment.time() >= scheduled_at
+        and last_run != moment.strftime("%Y-%m-%d")
+    )
 
 
 def ensure_dirs() -> None:
@@ -374,34 +392,143 @@ def classify_foreign_option_amount(amount: Any) -> dict[str, Any]:
     }
 
 
+def classify_option_imbalance(bull_value: Any, bear_value: Any, metric_name: str) -> dict[str, Any]:
+    """Classify a bullish/bearish option balance on a scale normalized by total positions."""
+    if bull_value is None and bear_value is None:
+        return {
+            "signal": "neutral",
+            "direction": "neutral",
+            "label": signal_label("neutral"),
+            "net": 0,
+            "imbalanceRatio": 0,
+            "imbalanceRatioFormat": "0.00%",
+            "reason": f"{metric_name}缺資料",
+        }
+
+    bull = max(safe_number(bull_value), 0)
+    bear = max(safe_number(bear_value), 0)
+    total = bull + bear
+    net = bull - bear
+    ratio = net / total if total else 0
+    if ratio >= OPTION_STRONG_IMBALANCE_THRESHOLD:
+        signal = "strong_bull"
+    elif ratio >= OPTION_IMBALANCE_THRESHOLD:
+        signal = "bull"
+    elif ratio <= -OPTION_STRONG_IMBALANCE_THRESHOLD:
+        signal = "strong_bear"
+    elif ratio <= -OPTION_IMBALANCE_THRESHOLD:
+        signal = "bear"
+    else:
+        signal = "neutral"
+    return {
+        "signal": signal,
+        "direction": signal_direction(signal),
+        "label": signal_label(signal),
+        "bull": as_int(bull),
+        "bear": as_int(bear),
+        "net": as_int(net),
+        "imbalanceRatio": round(ratio, 4),
+        "imbalanceRatioFormat": fmt_signed_percent(ratio * 100),
+        "reason": (
+            f"{metric_name}{signal_label(signal)}"
+            f"（偏多 {fmt_int(bull)} / 偏空 {fmt_int(bear)}，"
+            f"差 {fmt_signed_int(net)}、{fmt_signed_percent(ratio * 100)}）"
+        ),
+    }
+
+
+def classify_foreign_options(foreign_amount: dict[str, Any], foreign_lots: dict[str, Any]) -> dict[str, Any]:
+    """Combine option amount and lot balances using TAIFEX's four-leg directional grouping."""
+    amount_view = classify_option_imbalance(
+        foreign_amount.get("bullAmount"),
+        foreign_amount.get("bearAmount"),
+        "選擇權金額",
+    )
+    lot_view = classify_option_imbalance(
+        foreign_lots.get("bullLot"),
+        foreign_lots.get("bearLot"),
+        "選淨額口數",
+    )
+    amount_direction = amount_view["direction"]
+    lot_direction = lot_view["direction"]
+    directional = {"bull", "bear"}
+
+    if amount_direction in directional and lot_direction in directional and amount_direction != lot_direction:
+        signal = "divergent"
+        label = "金額口數分歧"
+    elif amount_direction in directional and amount_direction == lot_direction:
+        strong_signal = f"strong_{amount_direction}"
+        signal = strong_signal if amount_view["signal"] == strong_signal and lot_view["signal"] == strong_signal else amount_direction
+        label = signal_label(signal)
+    elif amount_direction in directional:
+        signal = amount_direction
+        label = signal_label(signal)
+    elif lot_direction in directional:
+        signal = lot_direction
+        label = signal_label(signal)
+    else:
+        signal = "neutral"
+        label = signal_label(signal)
+
+    direction = signal_direction(signal)
+    return {
+        "signal": signal,
+        "direction": direction,
+        "score": 1 if direction == "bull" else -1 if direction == "bear" else 0,
+        "label": label,
+        "reason": f"{amount_view['reason']}；{lot_view['reason']}",
+        "amount": amount_view,
+        "netLot": lot_view,
+        "strategyRule": {
+            "bull": "Buy Call（看大漲）＋Sell Put（看不跌）",
+            "bear": "Buy Put（看大跌）＋Sell Call（看不漲）",
+        },
+    }
+
+
+def build_option_position_views(row: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    institutional_amounts = row.get("optionInstitutionalAmount") or {}
+    institutional_lots = row.get("txoInstitutionalOpenInterest") or {}
+    views: dict[str, dict[str, Any]] = {}
+    for identity in IDENTITY_ORDER:
+        amount = institutional_amounts.get(identity) or {}
+        if identity == "foreign" and not amount:
+            amount = row.get("foreignOptionAmount") or {}
+        views[identity] = classify_foreign_options(amount, institutional_lots.get(identity) or {})
+    return views
+
+
 def build_foreign_position_view(row: dict[str, Any]) -> dict[str, Any]:
     spot = row.get("spotInstitutional") or {}
     large = row.get("largeTraderFutures") or {}
     pcr = row.get("optionPcr") or {}
-    foreign_opt = row.get("foreignOptionAmount") or {}
+    institutional_amounts = row.get("optionInstitutionalAmount") or {}
+    foreign_opt = institutional_amounts.get("foreign") or row.get("foreignOptionAmount") or {}
+    foreign_option_lots = ((row.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {})
 
     signals = {
         "spot": classify_foreign_spot(spot.get("foreignNetBuyAmount")),
         "largeTrader": classify_large_traders(large),
         "pcr": classify_pcr(pcr),
-        "foreignOption": classify_foreign_option_amount(foreign_opt.get("netAmount")),
+        "foreignOption": classify_foreign_options(foreign_opt, foreign_option_lots),
     }
     directions = {key: item["direction"] for key, item in signals.items()}
     bull_count = sum(1 for value in directions.values() if value == "bull")
     bear_count = sum(1 for value in directions.values() if value == "bear")
     derivative_bull_count = sum(1 for key in ("largeTrader", "pcr", "foreignOption") if directions[key] == "bull")
     derivative_bear_count = sum(1 for key in ("largeTrader", "pcr", "foreignOption") if directions[key] == "bear")
-    has_divergence = directions["largeTrader"] == "divergent"
+    has_divergence = any(directions[key] == "divergent" for key in ("largeTrader", "foreignOption"))
+    balance_score = bull_count - bear_count
 
     if bull_count >= 3 and directions["pcr"] != "bear":
         bias = "bullish"
         label = "外資偏多"
-        score = bull_count - bear_count
+        score = balance_score
         explanation = "外資現貨、期貨大戶與選擇權多數偏多"
     elif bear_count >= 3:
         bias = "bearish"
         label = "外資偏空"
-        score = bull_count - bear_count
+        score = balance_score
         explanation = "外資現貨、期貨大戶、PCR 或選擇權多數偏空"
     elif (directions["spot"] == "bull" and derivative_bear_count >= 2) or (directions["spot"] == "bear" and derivative_bull_count >= 2) or has_divergence:
         bias = "hedged"
@@ -411,7 +538,7 @@ def build_foreign_position_view(row: dict[str, Any]) -> dict[str, Any]:
     else:
         bias = "neutral"
         label = "中性 / 訊號不足"
-        score = bull_count - bear_count
+        score = 0
         explanation = "多空訊號未達確認門檻"
 
     reasons = [
@@ -433,11 +560,18 @@ def build_foreign_position_view(row: dict[str, Any]) -> dict[str, Any]:
         explanation_lines.append("目前多空訊號不夠一致，先視為中性。")
     if signals["pcr"]["direction"] == "bear":
         explanation_lines.append(f"避險訊號：{signals['pcr']['reason']}，Put 避險壓力較重")
+    explanation_lines.append(
+        "選擇權口徑：偏多 = Buy Call（看大漲）＋Sell Put（看不跌）；"
+        "偏空 = Buy Put（看大跌）＋Sell Call（看不漲）"
+    )
+    explanation_lines.append("注意：法人資料是外資群體合計互抵結果，不代表單一外資機構的完整策略。")
     return {
         "label": label,
         "bias": bias,
         "score": score,
         "scoreFormat": fmt_signed_int(score),
+        "balanceScore": balance_score,
+        "balanceScoreFormat": fmt_signed_int(balance_score),
         "bullCount": bull_count,
         "bearCount": bear_count,
         "confidence": "高" if max(bull_count, bear_count) >= 3 else "中" if max(bull_count, bear_count) == 2 else "低",
@@ -908,12 +1042,16 @@ def parse_option_institutional(text: str, trade_date: date) -> dict[str, Any]:
             oi_sell_amount=as_int(numbers[9]),
         )
     txo: dict[str, Any] = {}
+    option_amounts: dict[str, Any] = {}
     for identity in IDENTITY_ORDER:
         call = raw[identity]["買權"]
         put = raw[identity]["賣權"]
         bull_lot = call.oi_buy_lot + put.oi_sell_lot
         bear_lot = put.oi_buy_lot + call.oi_sell_lot
         net_lot = bull_lot - bear_lot
+        bull_amount = call.oi_buy_amount + put.oi_sell_amount
+        bear_amount = put.oi_buy_amount + call.oi_sell_amount
+        net_amount = bull_amount - bear_amount
         txo[identity] = {
             "bullLot": bull_lot,
             "bearLot": bear_lot,
@@ -921,25 +1059,30 @@ def parse_option_institutional(text: str, trade_date: date) -> dict[str, Any]:
             "bullLotFormat": fmt_int(bull_lot),
             "bearLotFormat": fmt_int(bear_lot),
             "netLotFormat": fmt_signed_int(net_lot),
+            "buyCallLot": call.oi_buy_lot,
+            "sellPutLot": put.oi_sell_lot,
+            "buyPutLot": put.oi_buy_lot,
+            "sellCallLot": call.oi_sell_lot,
         }
-    if not any((txo[identity]["bullLot"] or txo[identity]["bearLot"]) for identity in IDENTITY_ORDER):
-        raise ValueError(f"No {PRODUCT_NAME} rows were found.")
-    foreign_call = raw["foreign"]["買權"]
-    foreign_put = raw["foreign"]["賣權"]
-    bull_amount = foreign_call.oi_buy_amount + foreign_put.oi_sell_amount
-    bear_amount = foreign_put.oi_buy_amount + foreign_call.oi_sell_amount
-    net_amount = bull_amount - bear_amount
-    return {
-        "date": trade_date.isoformat(),
-        "dateLabel": date_label(trade_date),
-        "foreignOptionAmount": {
+        option_amounts[identity] = {
             "bullAmount": bull_amount,
             "bearAmount": bear_amount,
             "netAmount": net_amount,
             "bullAmountFormat": fmt_int(bull_amount),
             "bearAmountFormat": fmt_int(bear_amount),
             "netAmountFormat": fmt_signed_int(net_amount),
-        },
+            "buyCallAmount": call.oi_buy_amount,
+            "sellPutAmount": put.oi_sell_amount,
+            "buyPutAmount": put.oi_buy_amount,
+            "sellCallAmount": call.oi_sell_amount,
+        }
+    if not any((txo[identity]["bullLot"] or txo[identity]["bearLot"]) for identity in IDENTITY_ORDER):
+        raise ValueError(f"No {PRODUCT_NAME} rows were found.")
+    return {
+        "date": trade_date.isoformat(),
+        "dateLabel": date_label(trade_date),
+        "foreignOptionAmount": option_amounts["foreign"],
+        "optionInstitutionalAmount": option_amounts,
         "txoInstitutionalOpenInterest": txo,
     }
 
@@ -1022,6 +1165,7 @@ def normalize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
             fixed_percent = abs(change_percent) * (1 if change > 0 else -1)
             market["taiexChangePercent"] = round(fixed_percent, 2)
             market["taiexChangePercentFormat"] = fmt_signed_percent(fixed_percent)
+        row["optionPositionViews"] = build_option_position_views(row)
         row["foreignPositionView"] = build_foreign_position_view(row)
     payload["latest"] = payload.get("latest") or (payload["rows"][0] if payload["rows"] else None)
     if payload["rows"]:
@@ -1080,6 +1224,7 @@ def refresh_data() -> dict[str, Any]:
             "dateLabel": option_row["dateLabel"],
             "missingSources": [],
             "foreignOptionAmount": option_row.get("foreignOptionAmount", {}),
+            "optionInstitutionalAmount": option_row.get("optionInstitutionalAmount", {}),
             "txoInstitutionalOpenInterest": option_row.get("txoInstitutionalOpenInterest", {}),
         }
         fetchers = {
@@ -1111,6 +1256,7 @@ def refresh_data() -> dict[str, Any]:
     rows.sort(key=lambda item: item["date"], reverse=True)
     with_diffs(rows)
     for row in rows:
+        row["optionPositionViews"] = build_option_position_views(row)
         row["foreignPositionView"] = build_foreign_position_view(row)
     payload = empty_payload("\n".join(errors[:8]) if errors else None)
     payload.update({
@@ -1260,6 +1406,8 @@ def draw_history_detail_chart(payload: dict[str, Any], path: Path, limit: int = 
         ("小台散戶", 130, lambda r: ((r.get("retailMiniFutures") or {}).get("retailLongShortRatioFormat", "-"), (r.get("retailMiniFutures") or {}).get("retailLongShortRatio"))),
         ("外選金", 125, lambda r: ((r.get("foreignOptionAmount") or {}).get("netAmountFormat", "-"), (r.get("foreignOptionAmount") or {}).get("netAmount"))),
         ("外選淨", 115, lambda r: ((((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLotFormat", "-")), (((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLot")))),
+        ("自營選金", 125, lambda r: ((((r.get("optionInstitutionalAmount") or {}).get("dealer") or {}).get("netAmountFormat", "-")), (((r.get("optionInstitutionalAmount") or {}).get("dealer") or {}).get("netAmount")))),
+        ("自營選淨", 115, lambda r: ((((r.get("txoInstitutionalOpenInterest") or {}).get("dealer") or {}).get("netLotFormat", "-")), (((r.get("txoInstitutionalOpenInterest") or {}).get("dealer") or {}).get("netLot")))),
     ]
     total_table_w = sum(width for _, width, _ in columns)
     left = (width - total_table_w) // 2
@@ -1294,6 +1442,87 @@ def draw_history_detail_chart(payload: dict[str, Any], path: Path, limit: int = 
     img.save(path)
 
 
+def draw_history_detail_chart(payload: dict[str, Any], path: Path, limit: int = 15) -> None:
+    if Image is None or ImageDraw is None:
+        return
+    rows = (payload.get("rows") or [])[:limit]
+    width = 1900
+    row_h = 48
+    top_margin = 128
+    height = top_margin + 54 + max(len(rows), 1) * row_h + 54
+    img = Image.new("RGB", (width, height), "#f0f0f0")
+    draw = ImageDraw.Draw(img)
+    try:
+        title_font = ImageFont.truetype("msjh.ttc", 42)
+        header_font = ImageFont.truetype("msjh.ttc", 18)
+        cell_font = ImageFont.truetype("msjh.ttc", 18)
+        small_font = ImageFont.truetype("msjh.ttc", 16)
+    except Exception:
+        title_font = header_font = cell_font = small_font = ImageFont.load_default()
+
+    def color(value: Any) -> str:
+        number = safe_number(value)
+        if number > 0:
+            return "#1e325a"
+        if number < 0:
+            return "#d92d20"
+        return "#7a8391"
+
+    def text_fit(value: Any, limit_chars: int) -> str:
+        content = str(value if value not in {None, ""} else "-")
+        return content if len(content) <= limit_chars else content[: max(limit_chars - 1, 1)] + "…"
+
+    columns = [
+        ("日期", 105, lambda r: (r.get("dateLabel", "-")[5:], None)),
+        ("判讀", 130, lambda r: (compact_view_label((r.get("foreignPositionView") or {}).get("label", "-")), (r.get("foreignPositionView") or {}).get("score"))),
+        ("大盤", 145, lambda r: ((r.get("marketIndex") or {}).get("taiexCloseFormat", "-"), None)),
+        ("漲跌%", 95, lambda r: ((r.get("marketIndex") or {}).get("taiexChangePercentFormat", "-"), (r.get("marketIndex") or {}).get("taiexChangePercent"))),
+        ("外資買賣超", 130, lambda r: ((r.get("spotInstitutional") or {}).get("foreignNetBuyAmountYiFormat", "-").replace("億", ""), (r.get("spotInstitutional") or {}).get("foreignNetBuyAmount"))),
+        ("外資期貨", 120, lambda r: (((r.get("futuresInstitutional") or {}).get("foreign") or {}).get("netFormat", "-"), ((r.get("futuresInstitutional") or {}).get("foreign") or {}).get("net"))),
+        ("前五大", 115, lambda r: ((r.get("largeTraderFutures") or {}).get("top5NetFormat", "-"), (r.get("largeTraderFutures") or {}).get("top5Net"))),
+        ("前十大", 115, lambda r: ((r.get("largeTraderFutures") or {}).get("top10NetFormat", "-"), (r.get("largeTraderFutures") or {}).get("top10Net"))),
+        ("PCR", 105, lambda r: ((r.get("optionPcr") or {}).get("openInterestPcrFormat", "-"), None)),
+        ("小台散戶", 130, lambda r: ((r.get("retailMiniFutures") or {}).get("retailLongShortRatioFormat", "-"), (r.get("retailMiniFutures") or {}).get("retailLongShortRatio"))),
+        ("外資選擇權", 125, lambda r: ((r.get("foreignOptionAmount") or {}).get("netAmountFormat", "-"), (r.get("foreignOptionAmount") or {}).get("netAmount"))),
+        ("外資選淨額", 115, lambda r: ((((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLotFormat", "-")), (((r.get("txoInstitutionalOpenInterest") or {}).get("foreign") or {}).get("netLot")))),
+        ("自營選擇權", 125, lambda r: ((((r.get("optionInstitutionalAmount") or {}).get("dealer") or {}).get("netAmountFormat", "-")), (((r.get("optionInstitutionalAmount") or {}).get("dealer") or {}).get("netAmount")))),
+        ("自營選淨額", 115, lambda r: ((((r.get("txoInstitutionalOpenInterest") or {}).get("dealer") or {}).get("netLotFormat", "-")), (((r.get("txoInstitutionalOpenInterest") or {}).get("dealer") or {}).get("netLot")))),
+    ]
+    table_width = sum(col_width for _, col_width, _ in columns)
+    left = (width - table_width) // 2
+    right = left + table_width
+    latest = payload.get("latest") or {}
+
+    draw.rounded_rectangle((28, 24, width - 28, height - 24), radius=46, fill="#f8f8f8", outline="#ffffff", width=2)
+    draw.rounded_rectangle((left, 42, left + 245, 80), radius=19, fill="#ffffff", outline="#dfe3ea")
+    draw.text((left + 18, 51), "TWSE / TAIFEX", fill="#1e325a", font=small_font)
+    draw.text((left, 88), "近 15 日市場明細", fill="#1e325a", font=title_font)
+    draw.text((left + 430, 102), f"最新資料 {latest.get('dateLabel', '-')} / 偏多深藍，偏空紅色，中性灰色", fill="#5e6470", font=small_font)
+
+    y = top_margin
+    draw.rounded_rectangle((left, y, right, y + 42), radius=18, fill="#ffffff", outline="#dfe3ea")
+    x = left
+    for header, col_width, _ in columns:
+        draw.text((x + 10, y + 11), header, fill="#5e6470", font=header_font)
+        x += col_width
+        draw.line((x, y + 7, x, y + 42 + max(len(rows), 1) * row_h), fill="#e8ebf0", width=1)
+
+    for row_index, row in enumerate(rows):
+        y = top_margin + 42 + row_index * row_h
+        fill = "#ffffff" if row_index % 2 == 0 else "#f6f7f9"
+        draw.rounded_rectangle((left, y + 4, right, y + row_h - 4), radius=14, fill=fill, outline="#edf0f5")
+        x = left
+        for _, col_width, getter in columns:
+            value, tone = getter(row)
+            fill_color = color(tone) if tone is not None else "#111827"
+            draw.text((x + 10, y + 14), text_fit(value, max(4, col_width // 14)), fill=fill_color, font=cell_font)
+            x += col_width
+
+    if not rows:
+        draw.text((left + 20, top_margin + 68), "尚無資料", fill="#5e6470", font=cell_font)
+    img.save(path)
+
+
 def generate_static_files(payload: dict[str, Any]) -> None:
     ensure_dirs()
     draw_snapshot_chart(payload, STATIC_DIR / "overview-chart.png")
@@ -1310,8 +1539,7 @@ def ensure_overview_chart(payload: dict[str, Any]) -> Path:
 
 def ensure_discord_history_chart(payload: dict[str, Any]) -> Path:
     chart_path = STATIC_DIR / "discord-history-detail.png"
-    if not chart_path.exists():
-        draw_history_detail_chart(payload, chart_path)
+    draw_history_detail_chart(payload, chart_path)
     return chart_path
 
 
@@ -1337,6 +1565,8 @@ def discord_summary(payload: dict[str, Any], category: str = "overview") -> str:
     if not latest:
         return "目前尚無每日籌碼資料，請先更新資料。"
     foreign_view = latest.get("foreignPositionView") or build_foreign_position_view(latest)
+    option_views = latest.get("optionPositionViews") or build_option_position_views(latest)
+    dealer_view = option_views.get("dealer") or {}
     explanation_lines = foreign_view.get("explanationLines") or []
     lines = [
         f"**{latest.get('dateLabel')} 外資操作判讀**",
@@ -1348,6 +1578,12 @@ def discord_summary(payload: dict[str, Any], category: str = "overview") -> str:
         lines.extend(str(line) for line in explanation_lines if not str(line).startswith("多空強度："))
     elif foreign_view.get("explanation"):
         lines.append(str(foreign_view.get("explanation")))
+    lines.extend([
+        "",
+        "**自營商選擇權籌碼**",
+        f"判讀結果：{dealer_view.get('label', '中性')}",
+        f"判讀理由：{dealer_view.get('reason', '自營商選擇權缺資料')}",
+    ])
     return "\n".join(lines)
 
 
@@ -1426,7 +1662,7 @@ def scheduler_loop() -> None:
         try:
             current = now_taipei()
             today_key = current.strftime("%Y-%m-%d")
-            if current.time() >= scheduled_at and last_scheduler_run != today_key:
+            if should_run_daily_schedule(current, scheduled_at, last_scheduler_run):
                 payload = refresh_data()
                 last_scheduler_run = today_key
                 if DISCORD_SEND_AFTER_REFRESH and discord_configured() and discord_client:
@@ -1483,6 +1719,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 "scheduler": {
                     "timezone": TIMEZONE_NAME,
                     "time": SCHEDULE_TIME,
+                    "weekdaysOnly": True,
                     "lastRun": last_scheduler_run,
                     "lastError": last_error,
                     "discordBotConfigured": discord_configured(),
@@ -1497,6 +1734,12 @@ class AppHandler(BaseHTTPRequestHandler):
         elif parsed.path.startswith("/static/"):
             requested = (STATIC_DIR / parsed.path.removeprefix("/static/")).resolve()
             if STATIC_DIR.resolve() not in requested.parents and requested != STATIC_DIR.resolve():
+                self.send_error(HTTPStatus.FORBIDDEN.value)
+                return
+            self.send_file(requested)
+        elif parsed.path.startswith("/assets/"):
+            requested = (FRONTEND_DIST_DIR / parsed.path.removeprefix("/")).resolve()
+            if FRONTEND_DIST_DIR.resolve() not in requested.parents and requested != FRONTEND_DIST_DIR.resolve():
                 self.send_error(HTTPStatus.FORBIDDEN.value)
                 return
             self.send_file(requested)
@@ -1639,13 +1882,34 @@ def create_discord_bot() -> Any:
 
 
 def load_index_html() -> str:
-    return TEMPLATE_PATH.read_text(encoding="utf-8")
+    if FRONTEND_INDEX_PATH.exists():
+        return FRONTEND_INDEX_PATH.read_text(encoding="utf-8")
+    return """<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neuralyn frontend not built</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #000; color: #fff; font-family: system-ui, sans-serif; }
+    main { width: min(680px, calc(100% - 40px)); border: 1px solid #333; border-radius: 16px; padding: 28px; background: #0d0d0d; }
+    code { color: #d4d4d4; }
+    p { color: #a3a3a3; line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Neuralyn frontend 尚未建置</h1>
+    <p>請先進入 <code>frontend</code> 執行 <code>npm install</code> 與 <code>npm run build</code>，再重新整理此頁。</p>
+  </main>
+</body>
+</html>"""
 
 
 def run_web_server() -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), AppHandler)
     print(f"Serving {APP_BASE_URL}")
-    print(f"Daily refresh: {SCHEDULE_TIME} {TIMEZONE_NAME}")
+    print(f"Daily refresh: weekdays at {SCHEDULE_TIME} {TIMEZONE_NAME}")
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
